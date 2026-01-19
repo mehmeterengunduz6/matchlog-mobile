@@ -8,12 +8,17 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
+  AuthError,
+  clearSessionToken,
+  getSessionToken,
+} from '../../lib/api';
+import {
   computeInsights,
+  fetchWatchedEvents,
   formatDisplayDate,
   formatEventTime,
   groupWatchedEvents,
-  loadWatchedEvents,
-  saveWatchedEvents,
+  removeWatchedEvent,
   type WatchedEvent,
 } from '../../lib/matchlog';
 
@@ -24,35 +29,59 @@ export default function WatchedScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [sessionToken, setSessionTokenState] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const groupedEvents = useMemo(() => groupWatchedEvents(events), [events]);
   const insights = useMemo(() => computeInsights(events), [events]);
 
+  const loadEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const loaded = await fetchWatchedEvents();
+      setEvents(loaded);
+      setError(null);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        await clearSessionToken();
+        setSessionTokenState(null);
+        setEvents([]);
+        setError('Sign in to see your watched matches.');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Failed to load match log.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      setLoading(true);
-      loadWatchedEvents()
-        .then((stored) => {
-          if (active) {
-            setEvents(stored);
-            setError(null);
+      setCheckingSession(true);
+      getSessionToken()
+        .then((token) => {
+          if (!active) {
+            return;
           }
-        })
-        .catch((err) => {
-          if (active) {
-            setError(err instanceof Error ? err.message : 'Failed to load match log.');
+          setSessionTokenState(token);
+          if (token) {
+            void loadEvents();
+          } else {
+            setEvents([]);
+            setLoading(false);
+            setError('Sign in to see your watched matches.');
           }
         })
         .finally(() => {
           if (active) {
-            setLoading(false);
+            setCheckingSession(false);
           }
         });
       return () => {
         active = false;
       };
-    }, [])
+    }, [loadEvents])
   );
 
   function setPending(eventId: string, value: boolean) {
@@ -74,9 +103,16 @@ export default function WatchedScreen() {
     setPending(eventId, true);
 
     try {
-      await saveWatchedEvents(updated);
+      await removeWatchedEvent(eventId);
       setError(null);
     } catch (err) {
+      if (err instanceof AuthError) {
+        await clearSessionToken();
+        setSessionTokenState(null);
+        setEvents([]);
+        setError('Sign in to see your watched matches.');
+        return;
+      }
       setEvents(prevEvents);
       setError(err instanceof Error ? err.message : 'Failed to update match log.');
     } finally {
@@ -84,17 +120,80 @@ export default function WatchedScreen() {
     }
   }
 
+  async function signOut() {
+    await clearSessionToken();
+    setSessionTokenState(null);
+    setEvents([]);
+    setError('Signed out.');
+  }
+
+  if (checkingSession) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={styles.centered}>
+          <ThemedText>Checking session...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!sessionToken) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.hero}>
+            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
+            <ThemedText type="title" style={styles.heroTitle}>
+              Sign in to see your log
+            </ThemedText>
+            <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
+            >
+              Head to the fixtures tab and sign in with Google to sync your watched matches.
+            </ThemedText>
+          </View>
+          {error ? (
+            <ThemedText style={[styles.errorText, { color: theme.accent }]}>
+              {error}
+            </ThemedText>
+          ) : null}
+          <View style={styles.panel}>
+            <Link href="/" asChild>
+              <Pressable style={[styles.primaryButton, { backgroundColor: theme.accent }]}
+              >
+                <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
+                >
+                  Go to fixtures
+                </ThemedText>
+              </Pressable>
+            </Link>
+          </View>
+        </ScrollView>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.hero}>
-          <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
+          <View style={styles.authRow}>
+            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
+            <Pressable
+              style={[styles.ghostButton, { borderColor: theme.border }]}
+              onPress={signOut}
+            >
+              <ThemedText style={[styles.buttonText, { color: theme.text }]}
+              >
+                Sign out
+              </ThemedText>
+            </Pressable>
+          </View>
           <ThemedText type="title" style={styles.heroTitle}>
             Your watched matches
           </ThemedText>
           <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
           >
-            Everything you marked watched lives here on your device.
+            Everything you marked watched lives here on your Matchlog account.
           </ThemedText>
         </View>
 
@@ -241,6 +340,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 48,
   },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   hero: {
     paddingHorizontal: 20,
     paddingTop: 28,
@@ -259,6 +363,11 @@ const styles = StyleSheet.create({
   heroCopy: {
     fontSize: 15,
     lineHeight: 22,
+  },
+  authRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   statsRow: {
     paddingHorizontal: 20,
@@ -341,6 +450,19 @@ const styles = StyleSheet.create({
   logScore: {
     fontSize: 12,
     marginTop: 2,
+  },
+  primaryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   ghostButton: {
     paddingHorizontal: 12,

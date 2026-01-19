@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -7,84 +7,137 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
+  AuthError,
+  clearSessionToken,
+  fetchPublicJson,
+  getSessionToken,
+  setSessionToken,
+} from '../../lib/api';
+import {
   addDays,
-  computeStats,
+  addWatchedEvent,
   fetchEventsByDate,
   formatDisplayDate,
   formatEventTime,
-  loadWatchedEvents,
-  saveWatchedEvents,
+  removeWatchedEvent,
   todayValue,
-  toggleWatchedEvent,
+  updateStatsForToggle,
   type EventItem,
   type LeagueGroup,
-  type WatchedEvent,
+  type Stats,
 } from '../../lib/matchlog';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const initialStats: Stats = {
+  weekCount: 0,
+  monthCount: 0,
+  totalCount: 0,
+};
 
 export default function FixturesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
   const [selectedDate, setSelectedDate] = useState(todayValue());
   const [leagues, setLeagues] = useState<LeagueGroup[]>([]);
-  const [watchedEvents, setWatchedEvents] = useState<WatchedEvent[]>([]);
+  const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
+  const [stats, setStats] = useState<Stats>(initialStats);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-
-  const watchedIds = useMemo(
-    () => new Set(watchedEvents.map((event) => event.eventId)),
-    [watchedEvents]
-  );
-
-  const stats = useMemo(() => computeStats(watchedEvents), [watchedEvents]);
+  const [sessionToken, setSessionTokenState] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
 
   const totalEvents = useMemo(
     () => leagues.reduce((sum, league) => sum + league.events.length, 0),
     [leagues]
   );
 
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    scopes: ['profile', 'email'],
+  });
+
+  useEffect(() => {
+    getSessionToken()
+      .then((token) => {
+        setSessionTokenState(token);
+      })
+      .finally(() => setCheckingSession(false));
+  }, []);
+
+  useEffect(() => {
+    if (response?.type !== 'success') {
+      return;
+    }
+    const idToken = response.authentication?.idToken;
+    if (!idToken) {
+      setError('Google sign-in failed.');
+      return;
+    }
+    setAuthLoading(true);
+    fetchPublicJson('/mobile/login', {
+      method: 'POST',
+      body: JSON.stringify({ idToken }),
+    })
+      .then(async (data: { token: string }) => {
+        await setSessionToken(data.token);
+        setSessionTokenState(data.token);
+        setError(null);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Login failed.');
+      })
+      .finally(() => setAuthLoading(false));
+  }, [response]);
+
+  const handleAuthError = useCallback(async () => {
+    await clearSessionToken();
+    setSessionTokenState(null);
+    setLeagues([]);
+    setWatchedIds(new Set());
+    setStats(initialStats);
+    setError('Sign in to see your fixtures.');
+  }, []);
+
   const loadEvents = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchEventsByDate(selectedDate);
-      setLeagues(data);
+      setLeagues(data.leagues);
+      setWatchedIds(new Set(data.watchedIds));
+      setStats(data.stats);
       setError(null);
     } catch (err) {
+      if (err instanceof AuthError) {
+        await handleAuthError();
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to load fixtures.');
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
-
-  const refreshWatched = useCallback(async () => {
-    const stored = await loadWatchedEvents();
-    setWatchedEvents(stored);
-  }, []);
+  }, [handleAuthError, selectedDate]);
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      loadWatchedEvents().then((stored) => {
-        if (active) {
-          setWatchedEvents(stored);
-        }
-      });
-      return () => {
-        active = false;
-      };
-    }, [])
-  );
-
-  useFocusEffect(
-    useCallback(() => {
+      if (!sessionToken) {
+        return;
+      }
       void loadEvents();
-    }, [loadEvents])
+    }, [loadEvents, sessionToken])
   );
 
   function setPending(eventId: string, value: boolean) {
@@ -100,16 +153,33 @@ export default function FixturesScreen() {
   }
 
   async function toggleWatched(event: EventItem) {
-    const prevEvents = watchedEvents;
-    const updated = toggleWatchedEvent(prevEvents, event);
-    setWatchedEvents(updated);
+    const isWatched = watchedIds.has(event.eventId);
+    const prevWatchedIds = watchedIds;
+    const prevStats = stats;
+    const nextWatchedIds = new Set(prevWatchedIds);
+    if (isWatched) {
+      nextWatchedIds.delete(event.eventId);
+    } else {
+      nextWatchedIds.add(event.eventId);
+    }
+    setWatchedIds(nextWatchedIds);
+    setStats(updateStatsForToggle(prevStats, event, isWatched));
     setPending(event.eventId, true);
 
     try {
-      await saveWatchedEvents(updated);
+      if (isWatched) {
+        await removeWatchedEvent(event.eventId);
+      } else {
+        await addWatchedEvent(event);
+      }
       setError(null);
     } catch (err) {
-      setWatchedEvents(prevEvents);
+      if (err instanceof AuthError) {
+        await handleAuthError();
+        return;
+      }
+      setWatchedIds(prevWatchedIds);
+      setStats(prevStats);
       setError(err instanceof Error ? err.message : 'Failed to update match log.');
     } finally {
       setPending(event.eventId, false);
@@ -129,6 +199,69 @@ export default function FixturesScreen() {
     setSelectedDate(nextDate);
   }
 
+  async function signOut() {
+    await clearSessionToken();
+    setSessionTokenState(null);
+    setLeagues([]);
+    setWatchedIds(new Set());
+    setStats(initialStats);
+    setError(null);
+  }
+
+  if (checkingSession) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={styles.centered}>
+          <ThemedText>Checking session...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!sessionToken) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={styles.hero}>
+            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
+            <ThemedText type="title" style={styles.heroTitle}>
+              Sign in to track matches
+            </ThemedText>
+            <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
+            >
+              Use your Google account to sync watched matches with your Matchlog backend.
+            </ThemedText>
+          </View>
+          {error ? (
+            <ThemedText style={[styles.errorText, { color: theme.accent }]}>
+              {error}
+            </ThemedText>
+          ) : null}
+          <View style={styles.authActions}>
+            <Pressable
+              style={[
+                styles.primaryButton,
+                { backgroundColor: theme.accent },
+                (!request || authLoading) && styles.buttonDisabled,
+              ]}
+              onPress={() => promptAsync()}
+              disabled={!request || authLoading}
+            >
+              <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
+              >
+                {authLoading ? 'Signing in...' : 'Continue with Google'}
+              </ThemedText>
+            </Pressable>
+            <ThemedText style={[styles.formNote, { color: theme.muted }]}
+            >
+              Set `EXPO_PUBLIC_API_BASE_URL` if you are running the backend on a LAN address.
+            </ThemedText>
+          </View>
+        </ScrollView>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
@@ -136,13 +269,24 @@ export default function FixturesScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadEvents} />}
       >
         <View style={styles.hero}>
-          <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
+          <View style={styles.authRow}>
+            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
+            <Pressable
+              style={[styles.ghostButton, { borderColor: theme.border }]}
+              onPress={signOut}
+            >
+              <ThemedText style={[styles.buttonText, { color: theme.text }]}
+              >
+                Sign out
+              </ThemedText>
+            </Pressable>
+          </View>
           <ThemedText type="title" style={styles.heroTitle}>
             Your fixture diary
           </ThemedText>
           <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
           >
-            Pick a day, tap what you watched, and the app keeps your weekly and monthly totals.
+            Pick a day, tap what you watched, and your totals sync across devices.
           </ThemedText>
         </View>
 
@@ -224,15 +368,6 @@ export default function FixturesScreen() {
               <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
               >
                 Today
-              </ThemedText>
-            </Pressable>
-            <Pressable
-              style={[styles.ghostButton, { borderColor: theme.border }]}
-              onPress={refreshWatched}
-            >
-              <ThemedText style={[styles.buttonText, { color: theme.text }]}
-              >
-                Sync watched
               </ThemedText>
             </Pressable>
           </View>
@@ -337,6 +472,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 48,
   },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   hero: {
     paddingHorizontal: 20,
     paddingTop: 28,
@@ -355,6 +495,18 @@ const styles = StyleSheet.create({
   heroCopy: {
     fontSize: 15,
     lineHeight: 22,
+  },
+  authActions: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  authRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  formNote: {
+    fontSize: 12,
   },
   statsRow: {
     paddingHorizontal: 20,
