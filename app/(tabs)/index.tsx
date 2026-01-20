@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 
 import { ThemedText } from '@/components/themed-text';
@@ -62,13 +63,21 @@ export default function FixturesScreen() {
     [leagues]
   );
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    scopes: ['profile', 'email'],
+  const redirectUri = makeRedirectUri({
+    scheme: 'matchlogapp',
+    path: 'oauthredirect',
   });
+
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    {
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      redirectUri,
+      scopes: ['profile', 'email'],
+    },
+    { scheme: 'matchlogapp' }
+  );
 
   useEffect(() => {
     getSessionToken()
@@ -82,7 +91,7 @@ export default function FixturesScreen() {
     if (response?.type !== 'success') {
       return;
     }
-    const idToken = response.authentication?.idToken;
+    const idToken = response.authentication?.idToken ?? response.params?.id_token;
     if (!idToken) {
       setError('Google sign-in failed.');
       return;
