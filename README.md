@@ -27,10 +27,11 @@ You can start developing by editing the files inside the **app** directory. This
 
 ## Backend setup (Matchlog)
 
-The mobile app talks to the Matchlog Next.js backend and uses a dev build for Google auth.
+The mobile app talks to the Matchlog Next.js backend and uses Expo Go with the Auth Proxy for Google auth.
 
 - `EXPO_PUBLIC_API_BASE_URL` (optional): Override the API base URL. For local dev on device, set this to your machine IP, e.g. `http://192.168.1.10:3000/api`.
-- `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`: Google OAuth client IDs for Expo Auth Session (dev build). Expo Go is not supported for Google auth.
+- `EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID`: Google OAuth Web client ID for Expo Go (Auth Proxy).
+- Add the redirect URI `https://auth.expo.io/@mehmeterengunduz6/matchlog-app` to the Google OAuth client.
 
 ## Get a fresh project
 

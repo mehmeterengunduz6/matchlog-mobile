@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
+import { makeRedirectUri, ResponseType } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 
 import { ThemedText } from '@/components/themed-text';
@@ -63,21 +63,25 @@ export default function FixturesScreen() {
     [leagues]
   );
 
-  const redirectUri = makeRedirectUri({
-    scheme: 'matchlogapp',
-    path: 'oauthredirect',
+  const proxyRedirectUri = 'https://auth.expo.io/@mehmeterengunduz6/matchlog-app';
+  const returnUrl = makeRedirectUri({ path: 'oauthredirect' });
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+    redirectUri: proxyRedirectUri,
+    responseType: ResponseType.IdToken,
+    scopes: ['profile', 'email'],
   });
 
-  const [request, response, promptAsync] = Google.useAuthRequest(
-    {
-      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      redirectUri,
-      scopes: ['profile', 'email'],
-    },
-    { scheme: 'matchlogapp' }
-  );
+  function promptWithProxy() {
+    if (!request?.url) {
+      return;
+    }
+    const startUrl = `${proxyRedirectUri}/start?authUrl=${encodeURIComponent(
+      request.url
+    )}&returnUrl=${encodeURIComponent(returnUrl)}`;
+    void promptAsync({ url: startUrl });
+  }
 
   useEffect(() => {
     getSessionToken()
@@ -253,8 +257,8 @@ export default function FixturesScreen() {
                 { backgroundColor: theme.accent },
                 (!request || authLoading) && styles.buttonDisabled,
               ]}
-              onPress={() => promptAsync()}
-              disabled={!request || authLoading}
+              onPress={promptWithProxy}
+              disabled={!request?.url || authLoading}
             >
               <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
               >
