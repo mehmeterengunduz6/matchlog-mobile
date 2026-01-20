@@ -31,19 +31,11 @@ import {
   formatEventTime,
   removeWatchedEvent,
   todayValue,
-  updateStatsForToggle,
   type EventItem,
   type LeagueGroup,
-  type Stats,
 } from '../../lib/matchlog';
 
 WebBrowser.maybeCompleteAuthSession();
-
-const initialStats: Stats = {
-  weekCount: 0,
-  monthCount: 0,
-  totalCount: 0,
-};
 
 export default function FixturesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -52,7 +44,6 @@ export default function FixturesScreen() {
   const [selectedDate, setSelectedDate] = useState(todayValue());
   const [leagues, setLeagues] = useState<LeagueGroup[]>([]);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
-  const [stats, setStats] = useState<Stats>(initialStats);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
@@ -123,7 +114,6 @@ export default function FixturesScreen() {
     setSessionTokenState(null);
     setLeagues([]);
     setWatchedIds(new Set());
-    setStats(initialStats);
     setError('Sign in to see your fixtures.');
   }, []);
 
@@ -133,7 +123,6 @@ export default function FixturesScreen() {
       const data = await fetchEventsByDate(selectedDate);
       setLeagues(data.leagues);
       setWatchedIds(new Set(data.watchedIds));
-      setStats(data.stats);
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
@@ -170,7 +159,6 @@ export default function FixturesScreen() {
   async function toggleWatched(event: EventItem) {
     const isWatched = watchedIds.has(event.eventId);
     const prevWatchedIds = watchedIds;
-    const prevStats = stats;
     const nextWatchedIds = new Set(prevWatchedIds);
     if (isWatched) {
       nextWatchedIds.delete(event.eventId);
@@ -178,7 +166,6 @@ export default function FixturesScreen() {
       nextWatchedIds.add(event.eventId);
     }
     setWatchedIds(nextWatchedIds);
-    setStats(updateStatsForToggle(prevStats, event, isWatched));
     setPending(event.eventId, true);
 
     try {
@@ -194,7 +181,6 @@ export default function FixturesScreen() {
         return;
       }
       setWatchedIds(prevWatchedIds);
-      setStats(prevStats);
       setError(err instanceof Error ? err.message : 'Failed to update match log.');
     } finally {
       setPending(event.eventId, false);
@@ -211,7 +197,6 @@ export default function FixturesScreen() {
     setSessionTokenState(null);
     setLeagues([]);
     setWatchedIds(new Set());
-    setStats(initialStats);
     setError(null);
   }
 
@@ -305,29 +290,11 @@ export default function FixturesScreen() {
           </ThemedText>
         </View>
 
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}>This week</ThemedText>
-            <ThemedText style={styles.statValue}>{stats.weekCount}</ThemedText>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}>This month</ThemedText>
-            <ThemedText style={styles.statValue}>{stats.monthCount}</ThemedText>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}>Total watched</ThemedText>
-            <ThemedText style={styles.statValue}>{stats.totalCount}</ThemedText>
-          </View>
-        </View>
-
         <View style={[styles.panel, { backgroundColor: theme.surface }]}
         >
           <View style={styles.panelHeader}>
             <View>
-              <ThemedText type="subtitle">Pick a day eren</ThemedText>
+              <ThemedText type="subtitle">Pick a day</ThemedText>
               <ThemedText style={[styles.panelCopy, { color: theme.muted }]}
               >
                 Top leagues + Champions League.
@@ -509,26 +476,6 @@ const styles = StyleSheet.create({
   },
   formNote: {
     fontSize: 12,
-  },
-  statsRow: {
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 16,
-  },
-  statLabel: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 6,
   },
   panel: {
     marginTop: 20,

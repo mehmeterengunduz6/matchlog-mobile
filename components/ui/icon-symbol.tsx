@@ -21,6 +21,7 @@ const MAPPING = {
   soccerball: 'sports-soccer',
   'list.bullet.rectangle': 'format-list-bulleted',
   calendar: 'event',
+  'chart.bar': 'bar-chart',
 } as IconMapping;
 
 /**

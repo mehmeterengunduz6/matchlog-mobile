@@ -14,7 +14,6 @@ import {
   getSessionToken,
 } from '../../lib/api';
 import {
-  computeInsights,
   fetchWatchedEvents,
   formatDisplayDate,
   formatEventTime,
@@ -35,7 +34,6 @@ export default function WatchedScreen() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   const groupedEvents = useMemo(() => groupWatchedEvents(events), [events]);
-  const insights = useMemo(() => computeInsights(events), [events]);
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -209,44 +207,6 @@ export default function WatchedScreen() {
           </ThemedText>
         </View>
 
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}
-            >
-              Most watched team
-            </ThemedText>
-            <ThemedText style={styles.statValue}>{insights.topTeam}</ThemedText>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}
-            >
-              Top league
-            </ThemedText>
-            <ThemedText style={styles.statValue}>{insights.topLeague}</ThemedText>
-          </View>
-        </View>
-
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}
-            >
-              Busiest day
-            </ThemedText>
-            <ThemedText style={styles.statValue}>{insights.topWeekday}</ThemedText>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: theme.surface }]}
-          >
-            <ThemedText style={[styles.statLabel, { color: theme.muted }]}
-            >
-              Total watched
-            </ThemedText>
-            <ThemedText style={styles.statValue}>{insights.totalCount}</ThemedText>
-          </View>
-        </View>
-
         <View style={[styles.panel, { backgroundColor: theme.surface }]}
         >
           <View style={styles.panelHeader}>
@@ -383,27 +343,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  statsRow: {
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  statCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 16,
-  },
-  statLabel: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 6,
   },
   panel: {
     marginTop: 8,
