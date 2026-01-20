@@ -10,6 +10,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri, ResponseType } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -47,6 +48,7 @@ const initialStats: Stats = {
 export default function FixturesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
   const [selectedDate, setSelectedDate] = useState(todayValue());
   const [leagues, setLeagues] = useState<LeagueGroup[]>([]);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
@@ -199,16 +201,8 @@ export default function FixturesScreen() {
     }
   }
 
-  function jumpToToday() {
-    setSelectedDate(todayValue());
-  }
-
   function moveDate(delta: number) {
     const nextDate = addDays(selectedDate, delta);
-    const today = todayValue();
-    if (nextDate > today) {
-      return;
-    }
     setSelectedDate(nextDate);
   }
 
@@ -234,7 +228,12 @@ export default function FixturesScreen() {
   if (!sessionToken) {
     return (
       <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 12 },
+        ]}
+      >
           <View style={styles.hero}>
             <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
             <ThemedText type="title" style={styles.heroTitle}>
@@ -278,7 +277,10 @@ export default function FixturesScreen() {
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 12 },
+        ]}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={loadEvents} />}
       >
         <View style={styles.hero}>
@@ -325,7 +327,7 @@ export default function FixturesScreen() {
         >
           <View style={styles.panelHeader}>
             <View>
-              <ThemedText type="subtitle">Pick a day</ThemedText>
+              <ThemedText type="subtitle">Pick a day eren</ThemedText>
               <ThemedText style={[styles.panelCopy, { color: theme.muted }]}
               >
                 Top leagues + Champions League.
@@ -348,41 +350,25 @@ export default function FixturesScreen() {
           </View>
 
           <View style={styles.dateRow}>
-            <Pressable
-              style={[styles.iconButton, { backgroundColor: theme.surfaceAlt }]}
-              onPress={() => moveDate(-1)}
-            >
-              <ThemedText style={styles.iconButtonText}>◀</ThemedText>
-            </Pressable>
-            <View style={styles.dateInfo}>
-              <ThemedText style={[styles.dateValue, { color: theme.text }]}
+            <View style={[styles.datePill, { backgroundColor: theme.surfaceAlt }]}>
+              <Pressable
+                style={styles.datePillButton}
+                onPress={() => moveDate(-1)}
               >
-                {formatDisplayDate(selectedDate)}
-              </ThemedText>
-              <ThemedText style={[styles.dateHint, { color: theme.muted }]}
+                <ThemedText style={[styles.datePillIcon, { color: theme.tint }]}>◀</ThemedText>
+              </Pressable>
+              <View style={styles.datePillCenter}>
+                <ThemedText style={[styles.datePillLabel, { color: theme.tint }]}>
+                  {selectedDate === todayValue() ? 'Today' : formatDisplayDate(selectedDate)}
+                </ThemedText>
+              </View>
+              <Pressable
+                style={styles.datePillButton}
+                onPress={() => moveDate(1)}
               >
-                {selectedDate}
-              </ThemedText>
+                <ThemedText style={[styles.datePillIcon, { color: theme.tint }]}>▶</ThemedText>
+              </Pressable>
             </View>
-            <Pressable
-              style={[styles.iconButton, { backgroundColor: theme.surfaceAlt }]}
-              onPress={() => moveDate(1)}
-              disabled={selectedDate === todayValue()}
-            >
-              <ThemedText style={styles.iconButtonText}>▶</ThemedText>
-            </Pressable>
-          </View>
-
-          <View style={styles.dateActions}>
-            <Pressable
-              style={[styles.primaryButton, { backgroundColor: theme.accent }]}
-              onPress={jumpToToday}
-            >
-              <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
-              >
-                Today
-              </ThemedText>
-            </Pressable>
           </View>
 
           <View style={styles.summaryRow}>
@@ -453,6 +439,7 @@ export default function FixturesScreen() {
                             <Pressable
                               style={[
                                 isWatched ? styles.tagButton : styles.ghostButton,
+                                styles.watchButton,
                                 { borderColor: theme.border },
                                 isWatched && { backgroundColor: theme.surfaceAlt },
                                 isPending && styles.buttonDisabled,
@@ -460,7 +447,8 @@ export default function FixturesScreen() {
                               onPress={() => toggleWatched(event)}
                               disabled={isPending}
                             >
-                              <ThemedText style={[styles.buttonText, { color: theme.text }]}
+                              <ThemedText
+                                style={[styles.buttonText, styles.watchButtonText, { color: theme.text }]}
                               >
                                 {isWatched ? 'Watched' : 'Mark watched'}
                               </ThemedText>
@@ -483,6 +471,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    paddingTop: 0,
     paddingBottom: 48,
   },
   centered: {
@@ -492,7 +481,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     paddingHorizontal: 20,
-    paddingTop: 28,
+    paddingTop: 8,
     paddingBottom: 12,
   },
   eyebrow: {
@@ -564,22 +553,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  dateInfo: {
+  datePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  datePillButton: {
+    width: 40,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePillCenter: {
     flex: 1,
     alignItems: 'center',
   },
-  dateValue: {
-    fontSize: 16,
+  datePillLabel: {
+    fontSize: 18,
     fontWeight: '600',
   },
-  dateHint: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  dateActions: {
-    marginTop: 12,
-    flexDirection: 'row',
-    gap: 10,
+  datePillIcon: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   summaryRow: {
     marginTop: 16,
@@ -661,6 +659,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  watchButton: {
+    alignSelf: 'center',
+    height: 34,
+    minWidth: 110,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+  },
+  watchButtonText: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
   buttonText: {
     fontSize: 12,
     fontWeight: '600',
@@ -669,17 +678,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
   },
   emptyState: {
     marginTop: 18,

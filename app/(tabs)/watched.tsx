@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Link } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -25,6 +26,7 @@ import {
 export default function WatchedScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const insets = useSafeAreaInsets();
   const [events, setEvents] = useState<WatchedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +142,12 @@ export default function WatchedScreen() {
   if (!sessionToken) {
     return (
       <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 12 },
+          ]}
+        >
           <View style={styles.hero}>
             <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
             <ThemedText type="title" style={styles.heroTitle}>
@@ -174,7 +181,12 @@ export default function WatchedScreen() {
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 12 },
+        ]}
+      >
         <View style={styles.hero}>
           <View style={styles.authRow}>
             <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
@@ -310,13 +322,15 @@ export default function WatchedScreen() {
                       <Pressable
                         style={[
                           styles.ghostButton,
+                          styles.actionButton,
                           { borderColor: theme.border },
                           pendingIds.has(match.eventId) && styles.buttonDisabled,
                         ]}
                         onPress={() => unwatchEvent(match.eventId)}
                         disabled={pendingIds.has(match.eventId)}
                       >
-                        <ThemedText style={[styles.buttonText, { color: theme.text }]}
+                        <ThemedText
+                          style={[styles.buttonText, styles.actionButtonText, { color: theme.text }]}
                         >
                           {pendingIds.has(match.eventId) ? 'Removing...' : 'Unwatch'}
                         </ThemedText>
@@ -338,6 +352,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    paddingTop: 0,
     paddingBottom: 48,
   },
   centered: {
@@ -471,6 +486,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  actionButton: {
+    alignSelf: 'center',
+    height: 34,
+    minWidth: 110,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+  },
+  actionButtonText: {
+    fontSize: 11,
+    lineHeight: 14,
   },
   buttonText: {
     fontSize: 12,
