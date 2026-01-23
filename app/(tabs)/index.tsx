@@ -32,7 +32,6 @@ import {
   removeWatchedEvent,
   todayValue,
   type EventItem,
-  type LeagueGroup,
 } from '../../lib/matchlog';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -42,7 +41,7 @@ export default function FixturesScreen() {
   const theme = Colors[colorScheme];
   const insets = useSafeAreaInsets();
   const [selectedDate, setSelectedDate] = useState(todayValue());
-  const [leagues, setLeagues] = useState<LeagueGroup[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +49,6 @@ export default function FixturesScreen() {
   const [sessionToken, setSessionTokenState] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-
-  const totalEvents = useMemo(
-    () => leagues.reduce((sum, league) => sum + league.events.length, 0),
-    [leagues]
-  );
 
   const proxyRedirectUri = 'https://auth.expo.io/@mehmeterengunduz6/matchlog-app';
   const returnUrl = makeRedirectUri({ path: 'oauthredirect' });
@@ -112,7 +106,7 @@ export default function FixturesScreen() {
   const handleAuthError = useCallback(async () => {
     await clearSessionToken();
     setSessionTokenState(null);
-    setLeagues([]);
+    setEvents([]);
     setWatchedIds(new Set());
     setError('Sign in to see your fixtures.');
   }, []);
@@ -121,7 +115,7 @@ export default function FixturesScreen() {
     setLoading(true);
     try {
       const data = await fetchEventsByDate(selectedDate);
-      setLeagues(data.leagues);
+      setEvents(data.events);
       setWatchedIds(new Set(data.watchedIds));
       setError(null);
     } catch (err) {
@@ -195,7 +189,7 @@ export default function FixturesScreen() {
   async function signOut() {
     await clearSessionToken();
     setSessionTokenState(null);
-    setLeagues([]);
+    setEvents([]);
     setWatchedIds(new Set());
     setError(null);
   }
@@ -341,7 +335,7 @@ export default function FixturesScreen() {
           <View style={styles.summaryRow}>
             <ThemedText style={[styles.summaryText, { color: theme.muted }]}
             >
-              {totalEvents} matches found
+              {events.length} matches found
             </ThemedText>
             <ThemedText style={[styles.summaryText, { color: theme.muted }]}
             >
@@ -360,71 +354,62 @@ export default function FixturesScreen() {
             >
               Loading fixtures...
             </ThemedText>
-          ) : leagues.length === 0 ? (
+          ) : events.length === 0 ? (
             <ThemedText style={[styles.emptyState, { color: theme.muted }]}
             >
               No fixtures found for this day.
             </ThemedText>
           ) : (
-            <View style={styles.leagueList}>
-              {leagues
-                .filter((league) => league.events.length > 0)
-                .map((league) => (
-                  <View key={league.id} style={styles.leagueGroup}>
-                    <View style={styles.leagueHeader}>
-                      <ThemedText style={styles.leagueTitle}>{league.name}</ThemedText>
-                      <ThemedText style={[styles.leagueMeta, { color: theme.muted }]}
-                      >
-                        {league.events.length} matches
+            <View style={styles.eventList}>
+              {events.map((event) => {
+                const isWatched = watchedIds.has(event.eventId);
+                const isPending = pendingIds.has(event.eventId);
+                return (
+                  <View
+                    key={event.eventId}
+                    style={[styles.eventCard, { borderColor: theme.border }]}
+                  >
+                    <View style={styles.eventInfo}>
+                      <ThemedText style={styles.eventTime}>
+                        {formatEventTime(event.date, event.time)}
                       </ThemedText>
+                      <ThemedText style={styles.eventTeams}>
+                        {event.homeTeam} vs {event.awayTeam}
+                      </ThemedText>
+                      <View style={styles.eventMeta}>
+                        <View style={[styles.leagueBadge, { backgroundColor: theme.tint }]}>
+                          <ThemedText style={styles.leagueBadgeText}>
+                            {event.leagueName}
+                          </ThemedText>
+                        </View>
+                        <ThemedText style={[styles.eventScore, { color: theme.muted }]}
+                        >
+                          {event.homeScore !== null && event.awayScore !== null
+                            ? `${event.homeScore} - ${event.awayScore}`
+                            : 'Score TBD'}
+                        </ThemedText>
+                      </View>
                     </View>
-                    {league.events
-                      .slice()
-                      .sort((a, b) => a.time.localeCompare(b.time))
-                      .map((event) => {
-                        const isWatched = watchedIds.has(event.eventId);
-                        const isPending = pendingIds.has(event.eventId);
-                        return (
-                          <View
-                            key={event.eventId}
-                            style={[styles.eventCard, { borderColor: theme.border }]}
-                          >
-                            <View style={styles.eventInfo}>
-                              <ThemedText style={styles.eventTime}>
-                                {formatEventTime(event.date, event.time)}
-                              </ThemedText>
-                              <ThemedText style={styles.eventTeams}>
-                                {event.homeTeam} vs {event.awayTeam}
-                              </ThemedText>
-                              <ThemedText style={[styles.eventScore, { color: theme.muted }]}
-                              >
-                                {event.homeScore !== null && event.awayScore !== null
-                                  ? `${event.homeScore} - ${event.awayScore}`
-                                  : 'Score TBD'}
-                              </ThemedText>
-                            </View>
-                            <Pressable
-                              style={[
-                                isWatched ? styles.tagButton : styles.ghostButton,
-                                styles.watchButton,
-                                { borderColor: theme.border },
-                                isWatched && { backgroundColor: theme.surfaceAlt },
-                                isPending && styles.buttonDisabled,
-                              ]}
-                              onPress={() => toggleWatched(event)}
-                              disabled={isPending}
-                            >
-                              <ThemedText
-                                style={[styles.buttonText, styles.watchButtonText, { color: theme.text }]}
-                              >
-                                {isWatched ? 'Watched' : 'Mark watched'}
-                              </ThemedText>
-                            </Pressable>
-                          </View>
-                        );
-                      })}
+                    <Pressable
+                      style={[
+                        isWatched ? styles.tagButton : styles.ghostButton,
+                        styles.watchButton,
+                        { borderColor: theme.border },
+                        isWatched && { backgroundColor: theme.surfaceAlt },
+                        isPending && styles.buttonDisabled,
+                      ]}
+                      onPress={() => toggleWatched(event)}
+                      disabled={isPending}
+                    >
+                      <ThemedText
+                        style={[styles.buttonText, styles.watchButtonText, { color: theme.text }]}
+                      >
+                        {isWatched ? 'Watched' : 'Mark watched'}
+                      </ThemedText>
+                    </Pressable>
                   </View>
-                ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -534,24 +519,27 @@ const styles = StyleSheet.create({
   summaryText: {
     fontSize: 12,
   },
-  leagueList: {
+  eventList: {
     marginTop: 12,
+    gap: 10,
   },
-  leagueGroup: {
-    marginTop: 12,
-  },
-  leagueHeader: {
+  eventMeta: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: 10,
+    marginTop: 4,
   },
-  leagueTitle: {
-    fontSize: 16,
+  leagueBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  leagueBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
-  },
-  leagueMeta: {
-    fontSize: 12,
+    color: '#fff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   eventCard: {
     padding: 12,

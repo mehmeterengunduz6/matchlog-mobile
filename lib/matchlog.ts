@@ -18,12 +18,6 @@ export type EventItem = {
   awayScore: number | null;
 };
 
-export type LeagueGroup = {
-  id: string;
-  name: string;
-  events: EventItem[];
-};
-
 export type WatchedEvent = {
   id: number;
   eventId: string;
@@ -48,7 +42,7 @@ export type Insights = {
 };
 
 export type EventsResponse = {
-  leagues: LeagueGroup[];
+  events: EventItem[];
   watchedIds: string[];
   stats: Stats;
 };
