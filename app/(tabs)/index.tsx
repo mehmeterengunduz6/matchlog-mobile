@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -377,11 +378,10 @@ export default function FixturesScreen() {
                         {event.homeTeam} vs {event.awayTeam}
                       </ThemedText>
                       <View style={styles.eventMeta}>
-                        <View style={[styles.leagueBadge, { backgroundColor: theme.tint }]}>
-                          <ThemedText style={styles.leagueBadgeText}>
-                            {event.leagueName}
-                          </ThemedText>
-                        </View>
+                        <Image
+                          source={{ uri: event.leagueBadge }}
+                          style={styles.leagueBadgeImage}
+                        />
                         <ThemedText style={[styles.eventScore, { color: theme.muted }]}
                         >
                           {event.homeScore !== null && event.awayScore !== null
@@ -529,17 +529,10 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 4,
   },
-  leagueBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  leagueBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  leagueBadgeImage: {
+    width: 24,
+    height: 24,
+    resizeMode: 'contain',
   },
   eventCard: {
     padding: 12,

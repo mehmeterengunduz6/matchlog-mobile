@@ -10,6 +10,7 @@ export type EventItem = {
   eventId: string;
   leagueId: string;
   leagueName: string;
+  leagueBadge: string;
   date: string;
   time: string;
   homeTeam: string;
