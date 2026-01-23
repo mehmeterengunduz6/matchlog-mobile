@@ -115,8 +115,8 @@ export default function FixturesScreen() {
     setLoading(true);
     try {
       const data = await fetchEventsByDate(selectedDate);
-      setEvents(data.events);
-      setWatchedIds(new Set(data.watchedIds));
+      setEvents(data.events ?? []);
+      setWatchedIds(new Set(data.watchedIds ?? []));
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
