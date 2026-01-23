@@ -172,6 +172,15 @@ export function formatEventTime(date: string, time: string | null) {
   return time.length >= 5 ? time.slice(0, 5) : time;
 }
 
+export function isMatchLive(date: string, time: string | null): boolean {
+  if (!time) return false;
+  const now = new Date();
+  const matchStart = new Date(`${date}T${time}Z`);
+  if (Number.isNaN(matchStart.getTime())) return false;
+  const matchEnd = new Date(matchStart.getTime() + 2 * 60 * 60 * 1000);
+  return now >= matchStart && now < matchEnd;
+}
+
 export function updateStatsForToggle(stats: Stats, event: EventItem, isWatched: boolean) {
   const delta = isWatched ? -1 : 1;
   const today = new Date();

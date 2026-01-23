@@ -30,6 +30,7 @@ import {
   fetchEventsByDate,
   formatDisplayDate,
   formatEventTime,
+  isMatchLive,
   removeWatchedEvent,
   todayValue,
   type EventItem,
@@ -423,15 +424,23 @@ export default function FixturesScreen() {
                     {league.events.map((event) => {
                       const isWatched = watchedIds.has(event.eventId);
                       const isPending = pendingIds.has(event.eventId);
+                      const isLive = isMatchLive(event.date, event.time);
                       return (
                         <View
                           key={event.eventId}
                           style={[styles.eventCard, { borderColor: theme.border }]}
                         >
                           <View style={styles.eventInfo}>
-                            <ThemedText style={styles.eventTime}>
-                              {formatEventTime(event.date, event.time)}
-                            </ThemedText>
+                            <View style={styles.eventTimeRow}>
+                              <ThemedText style={styles.eventTime}>
+                                {formatEventTime(event.date, event.time)}
+                              </ThemedText>
+                              {isLive && (
+                                <View style={styles.liveBadge}>
+                                  <ThemedText style={styles.liveBadgeText}>LIVE</ThemedText>
+                                </View>
+                              )}
+                            </View>
                             <ThemedText style={styles.eventTeams}>
                               {event.homeTeam} vs {event.awayTeam}
                             </ThemedText>
@@ -635,9 +644,26 @@ const styles = StyleSheet.create({
   eventInfo: {
     flex: 1,
   },
+  eventTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   eventTime: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  liveBadge: {
+    backgroundColor: '#e53935',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  liveBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
   },
   eventTeams: {
     fontSize: 14,
