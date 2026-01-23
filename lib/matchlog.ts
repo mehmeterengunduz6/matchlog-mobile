@@ -42,8 +42,15 @@ export type Insights = {
   totalCount: number;
 };
 
-export type EventsResponse = {
+export type LeagueGroup = {
+  id: string;
+  name: string;
+  badge: string;
   events: EventItem[];
+};
+
+export type EventsResponse = {
+  leagues: LeagueGroup[];
   watchedIds: string[];
   stats: Stats;
 };
