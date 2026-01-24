@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -53,6 +54,7 @@ export default function FixturesScreen() {
   const [sessionToken, setSessionTokenState] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const proxyRedirectUri = 'https://auth.expo.io/@mehmeterengunduz6/matchlog-app';
   const returnUrl = makeRedirectUri({ path: 'oauthredirect' });
@@ -288,11 +290,11 @@ export default function FixturesScreen() {
             <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
             <Pressable
               style={[styles.ghostButton, { borderColor: theme.border }]}
-              onPress={signOut}
+              onPress={() => setShowSettings(true)}
             >
               <ThemedText style={[styles.buttonText, { color: theme.text }]}
               >
-                Sign out
+                Settings
               </ThemedText>
             </Pressable>
           </View>
@@ -393,33 +395,9 @@ export default function FixturesScreen() {
                         />
                         <ThemedText style={styles.leagueName}>{league.name}</ThemedText>
                       </View>
-                      <View style={styles.leagueActions}>
-                        <ThemedText style={[styles.leagueCount, { color: theme.muted }]}>
-                          {league.events.length}
-                        </ThemedText>
-                        <Pressable
-                          style={[
-                            styles.orderButton,
-                            { borderColor: theme.border },
-                            index === 0 && styles.buttonDisabled,
-                          ]}
-                          onPress={() => moveLeague(league.id, 'up')}
-                          disabled={index === 0}
-                        >
-                          <ThemedText style={styles.orderButtonText}>▲</ThemedText>
-                        </Pressable>
-                        <Pressable
-                          style={[
-                            styles.orderButton,
-                            { borderColor: theme.border },
-                            index === filtered.length - 1 && styles.buttonDisabled,
-                          ]}
-                          onPress={() => moveLeague(league.id, 'down')}
-                          disabled={index === filtered.length - 1}
-                        >
-                          <ThemedText style={styles.orderButtonText}>▼</ThemedText>
-                        </Pressable>
-                      </View>
+                      <ThemedText style={[styles.leagueCount, { color: theme.muted }]}>
+                        {league.events.length}
+                      </ThemedText>
                     </View>
                     {league.events.map((event) => {
                       const isWatched = watchedIds.has(event.eventId);
@@ -476,6 +454,125 @@ export default function FixturesScreen() {
           )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="title">Settings</ThemedText>
+              <Pressable
+                style={[styles.modalClose, { borderColor: theme.border }]}
+                onPress={() => setShowSettings(false)}
+              >
+                <ThemedText>✕</ThemedText>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.settingsSection}>
+                <ThemedText type="subtitle">League Order</ThemedText>
+                <ThemedText style={[styles.settingsDescription, { color: theme.muted }]}>
+                  Use arrows to reorder leagues
+                </ThemedText>
+                <View style={styles.leagueOrderList}>
+                  {leagueOrder.map((leagueId, index) => {
+                    const league = leagues.find((l) => l.id === leagueId);
+                    if (!league) return null;
+                    return (
+                      <View
+                        key={leagueId}
+                        style={[styles.leagueOrderItem, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
+                      >
+                        <View style={styles.leagueOrderInfo}>
+                          <Image
+                            source={{ uri: league.badge }}
+                            style={styles.leagueBadgeImage}
+                          />
+                          <ThemedText style={styles.leagueOrderName}>
+                            {league.name}
+                          </ThemedText>
+                        </View>
+                        <View style={styles.leagueOrderActions}>
+                          <Pressable
+                            style={[
+                              styles.orderButton,
+                              { borderColor: theme.border },
+                              index === 0 && styles.buttonDisabled,
+                            ]}
+                            onPress={() => {
+                              const newOrder = [...leagueOrder];
+                              [newOrder[index - 1], newOrder[index]] = [
+                                newOrder[index],
+                                newOrder[index - 1],
+                              ];
+                              setLeagueOrder(newOrder);
+                              setLeagues((prev) =>
+                                [...prev].sort(
+                                  (a, b) =>
+                                    newOrder.indexOf(a.id) -
+                                    newOrder.indexOf(b.id)
+                                )
+                              );
+                            }}
+                            disabled={index === 0}
+                          >
+                            <ThemedText style={styles.orderButtonText}>▲</ThemedText>
+                          </Pressable>
+                          <Pressable
+                            style={[
+                              styles.orderButton,
+                              { borderColor: theme.border },
+                              index === leagueOrder.length - 1 && styles.buttonDisabled,
+                            ]}
+                            onPress={() => {
+                              const newOrder = [...leagueOrder];
+                              [newOrder[index], newOrder[index + 1]] = [
+                                newOrder[index + 1],
+                                newOrder[index],
+                              ];
+                              setLeagueOrder(newOrder);
+                              setLeagues((prev) =>
+                                [...prev].sort(
+                                  (a, b) =>
+                                    newOrder.indexOf(a.id) -
+                                    newOrder.indexOf(b.id)
+                                )
+                              );
+                            }}
+                            disabled={index === leagueOrder.length - 1}
+                          >
+                            <ThemedText style={styles.orderButtonText}>▼</ThemedText>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.settingsSection}>
+                <ThemedText type="subtitle">Account</ThemedText>
+                <Pressable
+                  style={[styles.primaryButton, { backgroundColor: theme.accent }]}
+                  onPress={() => {
+                    setShowSettings(false);
+                    signOut();
+                  }}
+                >
+                  <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}>
+                    Sign out
+                  </ThemedText>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -607,11 +704,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
   },
-  leagueActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
   leagueCount: {
     fontSize: 12,
     marginRight: 4,
@@ -729,5 +821,69 @@ const styles = StyleSheet.create({
   errorText: {
     marginTop: 12,
     fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    flex: 1,
+  },
+  settingsSection: {
+    marginBottom: 24,
+  },
+  settingsDescription: {
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  leagueOrderList: {
+    gap: 8,
+  },
+  leagueOrderItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  leagueOrderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  leagueOrderName: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  leagueOrderActions: {
+    flexDirection: 'row',
+    gap: 6,
   },
 });
