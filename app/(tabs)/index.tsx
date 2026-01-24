@@ -340,17 +340,18 @@ export default function FixturesScreen() {
                 <ThemedText style={[styles.datePillIcon, { color: theme.tint }]}>▶</ThemedText>
               </Pressable>
             </View>
-            {selectedDate !== todayValue() && (
-              <Pressable
-                style={[styles.ghostButton, { borderColor: theme.border }]}
-                onPress={() => setSelectedDate(todayValue())}
-              >
-                <ThemedText style={[styles.buttonText, { color: theme.text }]}>
-                  Today
-                </ThemedText>
-              </Pressable>
-            )}
           </View>
+
+          {selectedDate !== todayValue() && (
+            <Pressable
+              style={[styles.ghostButton, { borderColor: theme.border, marginTop: 12 }]}
+              onPress={() => setSelectedDate(todayValue())}
+            >
+              <ThemedText style={[styles.buttonText, { color: theme.text }]}>
+                Jump to today
+              </ThemedText>
+            </Pressable>
+          )}
 
           <View style={styles.summaryRow}>
             <ThemedText style={[styles.summaryText, { color: theme.muted }]}>
@@ -642,13 +643,9 @@ const styles = StyleSheet.create({
   },
   dateRow: {
     marginTop: 16,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
   },
   datePill: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
