@@ -429,48 +429,48 @@ export default function FixturesScreen() {
                       const isPending = pendingIds.has(event.eventId);
                       const isLive = isMatchLive(event.date, event.time);
                       return (
-                        <View
+                        <Pressable
                           key={event.eventId}
-                          style={[styles.eventCard, { borderColor: theme.border }]}
+                          style={[styles.eventCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                          onPress={() => toggleWatched(event)}
+                          disabled={isPending}
                         >
-                          <View style={styles.eventInfo}>
-                            <View style={styles.eventTimeRow}>
-                              <ThemedText style={styles.eventTime}>
-                                {formatEventTime(event.date, event.time)}
-                              </ThemedText>
-                              {isLive && (
-                                <View style={styles.liveBadge}>
-                                  <ThemedText style={styles.liveBadgeText}>LIVE</ThemedText>
-                                </View>
-                              )}
-                            </View>
-                            <ThemedText style={styles.eventTeams}>
-                              {event.homeTeam} vs {event.awayTeam}
+                          <View style={styles.eventTimeCol}>
+                            <ThemedText style={[styles.eventTime, { color: theme.tint }]}>
+                              {formatEventTime(event.date, event.time)}
                             </ThemedText>
-                            <ThemedText style={[styles.eventScore, { color: theme.muted }]}>
-                              {event.homeScore !== null && event.awayScore !== null
-                                ? `${event.homeScore} - ${event.awayScore}`
-                                : 'Score TBD'}
+                            {isLive && (
+                              <ThemedText style={styles.eventStatus}>LIVE</ThemedText>
+                            )}
+                          </View>
+
+                          <View style={styles.eventTeamsCol}>
+                            <ThemedText style={styles.eventTeam}>
+                              {event.homeTeam}
+                            </ThemedText>
+                            <ThemedText style={styles.eventTeam}>
+                              {event.awayTeam}
                             </ThemedText>
                           </View>
-                          <Pressable
-                            style={[
-                              isWatched ? styles.tagButton : styles.ghostButton,
-                              styles.watchButton,
-                              { borderColor: theme.border },
-                              isWatched && { backgroundColor: theme.surface },
-                              isPending && styles.buttonDisabled,
-                            ]}
-                            onPress={() => toggleWatched(event)}
-                            disabled={isPending}
-                          >
-                            <ThemedText
-                              style={[styles.buttonText, styles.watchButtonText, { color: theme.text }]}
-                            >
-                              {isWatched ? 'Watched' : 'Mark watched'}
+
+                          <View style={styles.eventScoreCol}>
+                            <ThemedText style={styles.eventScoreText}>
+                              {event.homeScore ?? '-'}
                             </ThemedText>
-                          </Pressable>
-                        </View>
+                            <ThemedText style={styles.eventScoreText}>
+                              {event.awayScore ?? '-'}
+                            </ThemedText>
+                          </View>
+
+                          <View style={styles.eventWatchCol}>
+                            <ThemedText style={styles.watchIcon}>
+                              {isWatched ? '👁' : '👁'}
+                            </ThemedText>
+                            <ThemedText style={[styles.watchLabel, { color: theme.muted }]}>
+                              {isWatched ? 'Watched' : 'Watch'}
+                            </ThemedText>
+                          </View>
+                        </Pressable>
                       );
                     })}
                   </View>
@@ -753,45 +753,55 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   eventCard: {
-    padding: 10,
-    borderRadius: 14,
+    padding: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  eventInfo: {
-    flex: 1,
-  },
-  eventTimeRow: {
+    marginBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+  },
+  eventTimeCol: {
+    width: 50,
+    alignItems: 'center',
   },
   eventTime: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
-  liveBadge: {
-    backgroundColor: '#e53935',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  eventStatus: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#e53935',
+    marginTop: 2,
   },
-  liveBadgeText: {
+  eventTeamsCol: {
+    flex: 1,
+    gap: 4,
+  },
+  eventTeam: {
+    fontSize: 13,
+  },
+  eventScoreCol: {
+    width: 30,
+    alignItems: 'center',
+    gap: 4,
+  },
+  eventScoreText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  eventWatchCol: {
+    width: 60,
+    alignItems: 'center',
+    gap: 2,
+  },
+  watchIcon: {
+    fontSize: 20,
+  },
+  watchLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  eventTeams: {
-    fontSize: 14,
-    marginTop: 2,
-  },
-  eventScore: {
-    fontSize: 12,
-    marginTop: 2,
+    fontWeight: '600',
   },
   primaryButton: {
     paddingHorizontal: 16,
