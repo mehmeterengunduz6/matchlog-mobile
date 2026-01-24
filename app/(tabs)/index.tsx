@@ -859,13 +859,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalBodyContent: {
-    paddingBottom: 20,
+    padding: 20,
   },
   settingsSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   accountSection: {
-    marginTop: 32,
+    marginTop: 12,
     gap: 16,
   },
   settingsDescription: {
