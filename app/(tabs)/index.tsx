@@ -317,20 +317,6 @@ export default function FixturesScreen() {
                 Top leagues + Champions League.
               </ThemedText>
             </View>
-            <Pressable
-              style={[
-                styles.ghostButton,
-                { borderColor: theme.border },
-                loading && styles.buttonDisabled,
-              ]}
-              onPress={loadEvents}
-              disabled={loading}
-            >
-              <ThemedText style={[styles.buttonText, { color: theme.text }]}
-              >
-                {loading ? 'Refreshing...' : 'Refresh'}
-              </ThemedText>
-            </Pressable>
           </View>
 
           <View style={styles.dateRow}>
@@ -349,10 +335,21 @@ export default function FixturesScreen() {
               <Pressable
                 style={styles.datePillButton}
                 onPress={() => moveDate(1)}
+                disabled={selectedDate >= todayValue()}
               >
                 <ThemedText style={[styles.datePillIcon, { color: theme.tint }]}>▶</ThemedText>
               </Pressable>
             </View>
+            {selectedDate !== todayValue() && (
+              <Pressable
+                style={[styles.ghostButton, { borderColor: theme.border }]}
+                onPress={() => setSelectedDate(todayValue())}
+              >
+                <ThemedText style={[styles.buttonText, { color: theme.text }]}>
+                  Today
+                </ThemedText>
+              </Pressable>
+            )}
           </View>
 
           <View style={styles.summaryRow}>
