@@ -35,6 +35,7 @@ import {
   removeWatchedEvent,
   todayValue,
   type EventItem,
+  type EventsResponse,
   type LeagueGroup,
 } from '../../lib/matchlog';
 
@@ -55,6 +56,7 @@ export default function FixturesScreen() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [cache, setCache] = useState<Map<string, EventsResponse>>(new Map());
 
   const proxyRedirectUri = 'https://auth.expo.io/@mehmeterengunduz6/matchlog-app';
   const returnUrl = makeRedirectUri({ path: 'oauthredirect' });
@@ -117,7 +119,21 @@ export default function FixturesScreen() {
     setError('Sign in to see your fixtures.');
   }, []);
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (forceRefresh = false) => {
+    // Check cache first unless force refresh
+    if (!forceRefresh) {
+      const cached = cache.get(selectedDate);
+      if (cached) {
+        setLeagues(cached.leagues ?? []);
+        if (leagueOrder.length === 0 && cached.leagues?.length > 0) {
+          setLeagueOrder(cached.leagues.map((l) => l.id));
+        }
+        setWatchedIds(new Set(cached.watchedIds ?? []));
+        setError(null);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const data = await fetchEventsByDate(selectedDate);
@@ -127,6 +143,8 @@ export default function FixturesScreen() {
       }
       setWatchedIds(new Set(data.watchedIds ?? []));
       setError(null);
+      // Update cache
+      setCache((prev) => new Map(prev).set(selectedDate, data));
     } catch (err) {
       if (err instanceof AuthError) {
         await handleAuthError();
@@ -136,7 +154,7 @@ export default function FixturesScreen() {
     } finally {
       setLoading(false);
     }
-  }, [handleAuthError, selectedDate, leagueOrder.length]);
+  }, [handleAuthError, selectedDate, leagueOrder.length, cache]);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,6 +196,15 @@ export default function FixturesScreen() {
         await addWatchedEvent(event);
       }
       setError(null);
+      // Update cache with new watchedIds
+      const cached = cache.get(selectedDate);
+      if (cached) {
+        const updatedCache = {
+          ...cached,
+          watchedIds: Array.from(nextWatchedIds),
+        };
+        setCache((prev) => new Map(prev).set(selectedDate, updatedCache));
+      }
     } catch (err) {
       if (err instanceof AuthError) {
         await handleAuthError();
@@ -283,7 +310,7 @@ export default function FixturesScreen() {
           styles.scrollContent,
           { paddingTop: insets.top + 12 },
         ]}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadEvents} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => loadEvents(true)} />}
       >
         <View style={styles.hero}>
           <View style={styles.authRow}>
