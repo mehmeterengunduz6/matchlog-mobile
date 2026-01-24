@@ -461,8 +461,11 @@ export default function FixturesScreen() {
         transparent={true}
         onRequestClose={() => setShowSettings(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowSettings(false)}>
+          <Pressable
+            style={[styles.modalContent, { backgroundColor: theme.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
               <ThemedText type="title">Settings</ThemedText>
               <Pressable
@@ -558,23 +561,23 @@ export default function FixturesScreen() {
                 </View>
               </View>
 
-              <View style={styles.settingsSection}>
+              <View style={styles.accountSection}>
                 <ThemedText type="subtitle">Account</ThemedText>
                 <Pressable
-                  style={[styles.primaryButton, { backgroundColor: theme.accent }]}
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
                   onPress={() => {
                     setShowSettings(false);
                     signOut();
                   }}
                 >
-                  <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}>
+                  <ThemedText style={[styles.buttonText, { color: theme.text }]}>
                     Sign out
                   </ThemedText>
                 </Pressable>
               </View>
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </ThemedView>
   );
@@ -860,6 +863,10 @@ const styles = StyleSheet.create({
   },
   settingsSection: {
     marginBottom: 24,
+  },
+  accountSection: {
+    marginTop: 32,
+    gap: 16,
   },
   settingsDescription: {
     fontSize: 13,
