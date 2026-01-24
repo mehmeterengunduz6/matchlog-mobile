@@ -13,6 +13,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri, ResponseType } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -445,10 +446,10 @@ export default function FixturesScreen() {
                           </View>
 
                           <View style={styles.eventTeamsCol}>
-                            <ThemedText style={styles.eventTeam}>
+                            <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
                               {event.homeTeam}
                             </ThemedText>
-                            <ThemedText style={styles.eventTeam}>
+                            <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
                               {event.awayTeam}
                             </ThemedText>
                           </View>
@@ -463,9 +464,11 @@ export default function FixturesScreen() {
                           </View>
 
                           <View style={styles.eventWatchCol}>
-                            <ThemedText style={styles.watchIcon}>
-                              {isWatched ? '👁' : '👁'}
-                            </ThemedText>
+                            <Ionicons
+                              name={isWatched ? 'eye' : 'eye-outline'}
+                              size={20}
+                              color={theme.muted}
+                            />
                             <ThemedText style={[styles.watchLabel, { color: theme.muted }]}>
                               {isWatched ? 'Watched' : 'Watch'}
                             </ThemedText>
@@ -778,12 +781,13 @@ const styles = StyleSheet.create({
   eventTeamsCol: {
     flex: 1,
     gap: 4,
+    minWidth: 0,
   },
   eventTeam: {
     fontSize: 13,
   },
   eventScoreCol: {
-    width: 30,
+    width: 35,
     alignItems: 'center',
     gap: 4,
   },
@@ -792,12 +796,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   eventWatchCol: {
-    width: 60,
+    width: 55,
     alignItems: 'center',
-    gap: 2,
-  },
-  watchIcon: {
-    fontSize: 20,
+    gap: 4,
   },
   watchLabel: {
     fontSize: 10,
