@@ -753,10 +753,10 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   eventCard: {
-    padding: 12,
-    borderRadius: 16,
+    padding: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
@@ -787,11 +787,11 @@ const styles = StyleSheet.create({
   },
   eventTeams: {
     fontSize: 14,
-    marginTop: 4,
+    marginTop: 2,
   },
   eventScore: {
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 2,
   },
   primaryButton: {
     paddingHorizontal: 16,
