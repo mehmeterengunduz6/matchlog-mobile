@@ -473,7 +473,10 @@ export default function FixturesScreen() {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalBodyContent}
+            >
               <View style={styles.settingsSection}>
                 <ThemedText type="subtitle">League Order</ThemedText>
                 <ThemedText style={[styles.settingsDescription, { color: theme.muted }]}>
@@ -851,6 +854,9 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     flex: 1,
+  },
+  modalBodyContent: {
+    paddingBottom: 20,
   },
   settingsSection: {
     marginBottom: 24,
