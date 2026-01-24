@@ -832,17 +832,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  watchButton: {
-    alignSelf: 'center',
-    height: 34,
-    minWidth: 110,
-    paddingHorizontal: 14,
-    borderRadius: 17,
-  },
-  watchButtonText: {
-    fontSize: 11,
-    lineHeight: 14,
-  },
   buttonText: {
     fontSize: 12,
     fontWeight: '600',
