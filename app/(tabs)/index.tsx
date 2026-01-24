@@ -648,6 +648,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   datePill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
