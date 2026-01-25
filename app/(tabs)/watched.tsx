@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Link } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -32,20 +33,30 @@ export default function WatchedScreen() {
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [sessionToken, setSessionTokenState] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [cache, setCache] = useState<WatchedEvent[] | null>(null);
 
   const groupedEvents = useMemo(() => groupWatchedEvents(events), [events]);
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (forceRefresh = false) => {
+    // Check cache first unless force refresh
+    if (!forceRefresh && cache !== null) {
+      setEvents(cache);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     try {
       const loaded = await fetchWatchedEvents();
       setEvents(loaded);
+      setCache(loaded);
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
         await clearSessionToken();
         setSessionTokenState(null);
         setEvents([]);
+        setCache(null);
         setError('Sign in to see your watched matches.');
         return;
       }
@@ -53,7 +64,7 @@ export default function WatchedScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cache]);
 
   useFocusEffect(
     useCallback(() => {
@@ -104,12 +115,14 @@ export default function WatchedScreen() {
 
     try {
       await removeWatchedEvent(eventId);
+      setCache(updated);
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
         await clearSessionToken();
         setSessionTokenState(null);
         setEvents([]);
+        setCache(null);
         setError('Sign in to see your watched matches.');
         return;
       }
@@ -124,6 +137,7 @@ export default function WatchedScreen() {
     await clearSessionToken();
     setSessionTokenState(null);
     setEvents([]);
+    setCache(null);
     setError('Signed out.');
   }
 
@@ -184,6 +198,7 @@ export default function WatchedScreen() {
           styles.scrollContent,
           { paddingTop: insets.top + 12 },
         ]}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => loadEvents(true)} />}
       >
         <View style={styles.hero}>
           <View style={styles.authRow}>
@@ -256,47 +271,56 @@ export default function WatchedScreen() {
                       {items.length} match{items.length === 1 ? '' : 'es'}
                     </ThemedText>
                   </View>
-                  {items.map((match) => (
-                    <View
-                      key={match.eventId}
-                      style={[styles.logItem, { borderColor: theme.border }]}
-                    >
-                      <View style={styles.logInfo}>
-                        <ThemedText style={styles.logTime}>
-                          {formatEventTime(match.date, match.time)}
-                        </ThemedText>
-                        <ThemedText style={styles.logTeams}>
-                          {match.homeTeam} vs {match.awayTeam}
-                        </ThemedText>
-                        <ThemedText style={[styles.logLeague, { color: theme.muted }]}
+                  <View style={styles.matchList}>
+                    {items.map((match) => {
+                      const isPending = pendingIds.has(match.eventId);
+                      return (
+                        <View
+                          key={match.eventId}
+                          style={[styles.matchCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
                         >
-                          {match.leagueName}
-                        </ThemedText>
-                        <ThemedText style={[styles.logScore, { color: theme.muted }]}
-                        >
-                          {match.homeScore !== null && match.awayScore !== null
-                            ? `${match.homeScore} - ${match.awayScore}`
-                            : 'Score TBD'}
-                        </ThemedText>
-                      </View>
-                      <Pressable
-                        style={[
-                          styles.ghostButton,
-                          styles.actionButton,
-                          { borderColor: theme.border },
-                          pendingIds.has(match.eventId) && styles.buttonDisabled,
-                        ]}
-                        onPress={() => unwatchEvent(match.eventId)}
-                        disabled={pendingIds.has(match.eventId)}
-                      >
-                        <ThemedText
-                          style={[styles.buttonText, styles.actionButtonText, { color: theme.text }]}
-                        >
-                          {pendingIds.has(match.eventId) ? 'Removing...' : 'Unwatch'}
-                        </ThemedText>
-                      </Pressable>
-                    </View>
-                  ))}
+                          <View style={styles.eventTimeCol}>
+                            <ThemedText style={[styles.eventTime, { color: theme.tint }]}>
+                              {formatEventTime(match.date, match.time)}
+                            </ThemedText>
+                          </View>
+
+                          <View style={styles.eventTeamsCol}>
+                            <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
+                              {match.homeTeam}
+                            </ThemedText>
+                            <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
+                              {match.awayTeam}
+                            </ThemedText>
+                          </View>
+
+                          <View style={styles.eventScoreCol}>
+                            <ThemedText style={styles.eventScoreText}>
+                              {match.homeScore ?? '-'}
+                            </ThemedText>
+                            <ThemedText style={styles.eventScoreText}>
+                              {match.awayScore ?? '-'}
+                            </ThemedText>
+                          </View>
+
+                          <Pressable
+                            style={styles.eventWatchCol}
+                            onPress={() => unwatchEvent(match.eventId)}
+                            disabled={isPending}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={20}
+                              color={theme.muted}
+                            />
+                            <ThemedText style={[styles.watchLabel, { color: theme.muted }]}>
+                              {isPending ? 'Removing' : 'Remove'}
+                            </ThemedText>
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                  </View>
                 </View>
               ))}
             </View>
@@ -364,10 +388,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   logDay: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   logDate: {
-    marginBottom: 10,
+    marginBottom: 12,
   },
   logDateText: {
     fontSize: 16,
@@ -377,33 +401,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  logItem: {
-    padding: 12,
-    borderRadius: 16,
+  matchList: {
+    gap: 8,
+  },
+  matchCard: {
+    padding: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 10,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
   },
-  logInfo: {
-    flex: 1,
+  eventTimeCol: {
+    width: 50,
+    alignItems: 'center',
   },
-  logTime: {
+  eventTime: {
     fontSize: 13,
     fontWeight: '700',
   },
-  logTeams: {
-    fontSize: 14,
-    marginTop: 4,
+  eventTeamsCol: {
+    flex: 1,
+    gap: 4,
+    minWidth: 0,
   },
-  logLeague: {
-    fontSize: 12,
-    marginTop: 4,
+  eventTeam: {
+    fontSize: 13,
   },
-  logScore: {
-    fontSize: 12,
-    marginTop: 2,
+  eventScoreCol: {
+    width: 35,
+    alignItems: 'center',
+    gap: 4,
+  },
+  eventScoreText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  eventWatchCol: {
+    width: 55,
+    alignItems: 'center',
+    gap: 4,
+  },
+  watchLabel: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   primaryButton: {
     paddingHorizontal: 16,

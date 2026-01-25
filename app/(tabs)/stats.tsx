@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +27,7 @@ export default function StatsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionTokenState] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [cache, setCache] = useState<WatchedEvent[] | null>(null);
 
   const insights = useMemo(() => computeInsights(events), [events]);
 
@@ -68,17 +69,26 @@ export default function StatsScreen() {
     };
   }, [events]);
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (forceRefresh = false) => {
+    // Check cache first unless force refresh
+    if (!forceRefresh && cache !== null) {
+      setEvents(cache);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     try {
       const loaded = await fetchWatchedEvents();
       setEvents(loaded);
+      setCache(loaded);
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
         await clearSessionToken();
         setSessionTokenState(null);
         setEvents([]);
+        setCache(null);
         setError('Sign in to see your stats.');
         return;
       }
@@ -86,7 +96,7 @@ export default function StatsScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cache]);
 
   useFocusEffect(
     useCallback(() => {
@@ -156,6 +166,7 @@ export default function StatsScreen() {
     >
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12 }]}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => loadEvents(true)} />}
       >
         <View style={styles.hero}>
           <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>

@@ -14,6 +14,10 @@ import { makeRedirectUri, ResponseType } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import DraggableFlatList, {
+  ScaleDecorator,
+} from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -229,20 +233,6 @@ export default function FixturesScreen() {
     setLeagues([]);
     setWatchedIds(new Set());
     setError(null);
-  }
-
-  function moveLeague(leagueId: string, direction: 'up' | 'down') {
-    const newOrder = [...leagueOrder];
-    const idx = newOrder.indexOf(leagueId);
-    if (direction === 'up' && idx > 0) {
-      [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
-    } else if (direction === 'down' && idx < newOrder.length - 1) {
-      [newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
-    }
-    setLeagueOrder(newOrder);
-    setLeagues((prev) =>
-      [...prev].sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id))
-    );
   }
 
   if (checkingSession) {
@@ -511,82 +501,59 @@ export default function FixturesScreen() {
               <View style={styles.settingsSection}>
                 <ThemedText type="subtitle">League Order</ThemedText>
                 <ThemedText style={[styles.settingsDescription, { color: theme.muted }]}>
-                  Use arrows to reorder leagues
+                  Drag and drop to reorder leagues
                 </ThemedText>
-                <View style={styles.leagueOrderList}>
-                  {leagueOrder.map((leagueId, index) => {
-                    const league = leagues.find((l) => l.id === leagueId);
-                    if (!league) return null;
-                    return (
-                      <View
-                        key={leagueId}
-                        style={[styles.leagueOrderItem, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-                      >
-                        <View style={styles.leagueOrderInfo}>
-                          <Image
-                            source={{ uri: league.badge }}
-                            style={styles.leagueBadgeImage}
-                          />
-                          <ThemedText style={styles.leagueOrderName}>
-                            {league.name}
-                          </ThemedText>
-                        </View>
-                        <View style={styles.leagueOrderActions}>
-                          <Pressable
-                            style={[
-                              styles.orderButton,
-                              { borderColor: theme.border },
-                              index === 0 && styles.buttonDisabled,
-                            ]}
-                            onPress={() => {
-                              const newOrder = [...leagueOrder];
-                              [newOrder[index - 1], newOrder[index]] = [
-                                newOrder[index],
-                                newOrder[index - 1],
-                              ];
-                              setLeagueOrder(newOrder);
-                              setLeagues((prev) =>
-                                [...prev].sort(
-                                  (a, b) =>
-                                    newOrder.indexOf(a.id) -
-                                    newOrder.indexOf(b.id)
-                                )
-                              );
-                            }}
-                            disabled={index === 0}
-                          >
-                            <ThemedText style={styles.orderButtonText}>▲</ThemedText>
-                          </Pressable>
-                          <Pressable
-                            style={[
-                              styles.orderButton,
-                              { borderColor: theme.border },
-                              index === leagueOrder.length - 1 && styles.buttonDisabled,
-                            ]}
-                            onPress={() => {
-                              const newOrder = [...leagueOrder];
-                              [newOrder[index], newOrder[index + 1]] = [
-                                newOrder[index + 1],
-                                newOrder[index],
-                              ];
-                              setLeagueOrder(newOrder);
-                              setLeagues((prev) =>
-                                [...prev].sort(
-                                  (a, b) =>
-                                    newOrder.indexOf(a.id) -
-                                    newOrder.indexOf(b.id)
-                                )
-                              );
-                            }}
-                            disabled={index === leagueOrder.length - 1}
-                          >
-                            <ThemedText style={styles.orderButtonText}>▼</ThemedText>
-                          </Pressable>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
+                <GestureHandlerRootView style={styles.leagueOrderList}>
+                  <DraggableFlatList
+                    data={leagueOrder.map((leagueId) => ({
+                      id: leagueId,
+                      league: leagues.find((l) => l.id === leagueId),
+                    })).filter((item) => item.league !== undefined)}
+                    keyExtractor={(item) => item.id}
+                    onDragEnd={({ data }) => {
+                      const newOrder = data.map((item) => item.id);
+                      setLeagueOrder(newOrder);
+                      setLeagues((prev) =>
+                        [...prev].sort(
+                          (a, b) =>
+                            newOrder.indexOf(a.id) - newOrder.indexOf(b.id)
+                        )
+                      );
+                    }}
+                    renderItem={({ item, drag, isActive }) => (
+                      <ScaleDecorator>
+                        <Pressable
+                          onLongPress={drag}
+                          disabled={isActive}
+                          style={[
+                            styles.leagueOrderItem,
+                            {
+                              backgroundColor: isActive ? theme.surfaceAlt : theme.surfaceAlt,
+                              borderColor: theme.border,
+                              opacity: isActive ? 0.8 : 1,
+                            },
+                          ]}
+                        >
+                          <View style={styles.leagueOrderInfo}>
+                            <Ionicons
+                              name="menu"
+                              size={20}
+                              color={theme.muted}
+                              style={{ marginRight: 8 }}
+                            />
+                            <Image
+                              source={{ uri: item.league!.badge }}
+                              style={styles.leagueBadgeImage}
+                            />
+                            <ThemedText style={styles.leagueOrderName}>
+                              {item.league!.name}
+                            </ThemedText>
+                          </View>
+                        </Pressable>
+                      </ScaleDecorator>
+                    )}
+                  />
+                </GestureHandlerRootView>
               </View>
 
               <View style={styles.accountSection}>
@@ -739,17 +706,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginRight: 4,
   },
-  orderButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  orderButtonText: {
-    fontSize: 10,
-  },
   leagueBadgeImage: {
     width: 24,
     height: 24,
@@ -900,11 +856,11 @@ const styles = StyleSheet.create({
   },
   leagueOrderItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
+    marginBottom: 8,
   },
   leagueOrderInfo: {
     flexDirection: 'row',
@@ -916,9 +872,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     flex: 1,
-  },
-  leagueOrderActions: {
-    flexDirection: 'row',
-    gap: 6,
   },
 });
