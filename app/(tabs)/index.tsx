@@ -469,6 +469,10 @@ export default function FixturesScreen() {
 
     try {
       await toggleFavoriteTeam(teamName);
+      // Invalidate cache for current date so it refetches with updated favorites
+      const newCache = new Map(cache);
+      newCache.delete(selectedDate);
+      setCache(newCache);
     } catch (err) {
       console.error('Failed to toggle favorite team:', err);
       // Rollback on error
