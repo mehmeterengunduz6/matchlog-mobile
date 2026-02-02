@@ -24,30 +24,43 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="watched"
-        options={{
-          title: 'Watched',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="list.bullet.rectangle" color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="stats"
         options={{
-          title: 'Stats',
+          title: 'My Stats',
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="chart.bar" color={color} />
           ),
         }}
       />
       <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: 'Leaderboard',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="trophy.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="person.circle.fill" color={color} />
+          ),
+        }}
+      />
+      {/* Hidden tabs - content moved to Profile */}
+      <Tabs.Screen
+        name="watched"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="friends"
         options={{
-          title: 'Friends',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="person.2.fill" color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>

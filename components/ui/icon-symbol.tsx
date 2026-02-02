@@ -22,6 +22,7 @@ const MAPPING = {
   'list.bullet.rectangle': 'format-list-bulleted',
   calendar: 'event',
   'chart.bar': 'bar-chart',
+  'trophy.fill': 'emoji-events',
   'person.2.fill': 'group',
 } as IconMapping;
 

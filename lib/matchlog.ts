@@ -52,6 +52,7 @@ export type LeagueGroup = {
 export type EventsResponse = {
   leagues: LeagueGroup[];
   watchedIds: string[];
+  notifiedIds: string[];
   stats: Stats;
 };
 
@@ -102,6 +103,36 @@ export async function removeWatchedEvent(eventId: string) {
   });
 }
 
+export async function addNotifiedEvent(
+  event: EventItem,
+  notificationId: string
+) {
+  await fetchJson('/notified', {
+    method: 'POST',
+    body: JSON.stringify({
+      eventId: event.eventId,
+      leagueId: event.leagueId,
+      leagueName: event.leagueName,
+      date: event.date,
+      time: event.time,
+      homeTeam: event.homeTeam,
+      awayTeam: event.awayTeam,
+      notificationId,
+    }),
+  });
+}
+
+export async function removeNotifiedEvent(eventId: string) {
+  await fetchJson('/notified', {
+    method: 'DELETE',
+    body: JSON.stringify({ eventId }),
+  });
+}
+
+export async function getNotifiedEvent(eventId: string) {
+  return await fetchJson(`/notified?eventId=${eventId}`);
+}
+
 export function todayValue() {
   return formatDate(new Date());
 }
@@ -148,27 +179,38 @@ export function formatEventTime(date: string, time: string | null) {
   if (!time) {
     return 'TBD';
   }
-  if (time.includes('T')) {
-    const parsed = new Date(time);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleTimeString('en-GB', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
+
+  try {
+    let parsed: Date | null = null;
+
+    // If time already includes date (ISO format like "2024-02-01T15:00:00")
+    if (time.includes('T')) {
+      parsed = new Date(time);
+    } else if (date) {
+      // Extract just the date part if it's an ISO timestamp
+      // Handles both "2026-02-01" and "2026-02-01T00:00:00.000Z"
+      const dateOnly = date.includes('T') ? date.split('T')[0] : date;
+
+      // Convert date + time to UTC ISO string
+      // TheSportsDB returns times in UTC format (e.g., "15:00:00" or "15:00")
+      const timeWithSeconds = time.includes(':') && time.split(':').length === 2
+        ? `${time}:00`
+        : time;
+      const isoString = `${dateOnly}T${timeWithSeconds}Z`;
+      parsed = new Date(isoString);
     }
-  }
-  const iso = date ? `${date}T${time}Z` : '';
-  if (iso) {
-    const parsed = new Date(iso);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleTimeString('en-GB', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
+
+    if (parsed && !Number.isNaN(parsed.getTime())) {
+      // Convert UTC time to local timezone
+      const hours = parsed.getHours().toString().padStart(2, '0');
+      const minutes = parsed.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
     }
+  } catch (error) {
+    console.error('[formatEventTime] Error:', error, { date, time });
   }
+
+  // Fallback: return raw time string
   return time.length >= 5 ? time.slice(0, 5) : time;
 }
 

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -33,18 +35,82 @@ import {
 import {
   addDays,
   addWatchedEvent,
+  addNotifiedEvent,
   fetchEventsByDate,
   formatDisplayDate,
   formatEventTime,
+  getNotifiedEvent,
   isMatchLive,
   removeWatchedEvent,
+  removeNotifiedEvent,
   todayValue,
   type EventItem,
   type EventsResponse,
   type LeagueGroup,
 } from '../../lib/matchlog';
+import {
+  cancelNotification,
+  getMatchStatus,
+  requestNotificationPermissions,
+  scheduleMatchNotification,
+} from '../../lib/notifications';
+import {
+  fetchPreferences,
+  getCachedPreferences,
+  toggleLeagueCollapsed,
+  toggleLeagueHidden,
+  toggleFavoriteTeam,
+  updateLeagueOrder,
+  type UserPreferences,
+} from '../../lib/preferences';
 
 WebBrowser.maybeCompleteAuthSession();
+
+function groupLeaguesWithFavorites(
+  leagues: LeagueGroup[],
+  favoriteTeams: Set<string>
+): LeagueGroup[] {
+  if (favoriteTeams.size === 0) {
+    return leagues;
+  }
+
+  const favoriteEvents: EventItem[] = [];
+  const updatedLeagues: LeagueGroup[] = [];
+
+  // Extract favorite matches from all leagues
+  leagues.forEach((league) => {
+    const nonFavoriteEvents: EventItem[] = [];
+
+    league.events.forEach((event) => {
+      if (favoriteTeams.has(event.homeTeam) || favoriteTeams.has(event.awayTeam)) {
+        favoriteEvents.push(event);
+      } else {
+        nonFavoriteEvents.push(event);
+      }
+    });
+
+    // Only include league if it still has non-favorite events
+    if (nonFavoriteEvents.length > 0) {
+      updatedLeagues.push({
+        ...league,
+        events: nonFavoriteEvents,
+      });
+    }
+  });
+
+  // Create Favorites group if there are any favorite matches
+  if (favoriteEvents.length > 0) {
+    const favoritesGroup: LeagueGroup = {
+      id: 'favorites',
+      name: 'Favorites',
+      badge: '',
+      events: favoriteEvents,
+    };
+    return [favoritesGroup, ...updatedLeagues];
+  }
+
+  return updatedLeagues;
+}
 
 export default function FixturesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -53,7 +119,11 @@ export default function FixturesScreen() {
   const [selectedDate, setSelectedDate] = useState(todayValue());
   const [leagues, setLeagues] = useState<LeagueGroup[]>([]);
   const [leagueOrder, setLeagueOrder] = useState<string[]>([]);
+  const [collapsedLeagues, setCollapsedLeagues] = useState<Set<string>>(new Set());
+  const [hiddenLeagues, setHiddenLeagues] = useState<Set<string>>(new Set());
+  const [favoriteTeams, setFavoriteTeams] = useState<Set<string>>(new Set());
   const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
+  const [notifiedIds, setNotifiedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
@@ -91,6 +161,40 @@ export default function FixturesScreen() {
       .finally(() => setCheckingSession(false));
   }, []);
 
+  const applyPreferences = useCallback((prefs: UserPreferences) => {
+    if (prefs.collapsedLeagues) {
+      setCollapsedLeagues(new Set(prefs.collapsedLeagues));
+    }
+    if (prefs.hiddenLeagues) {
+      setHiddenLeagues(new Set(prefs.hiddenLeagues));
+    }
+    if (prefs.leagueOrder && prefs.leagueOrder.length > 0) {
+      setLeagueOrder(prefs.leagueOrder);
+    }
+    if (prefs.favoriteTeams) {
+      setFavoriteTeams(new Set(prefs.favoriteTeams));
+    }
+  }, []);
+
+  const loadPreferences = useCallback(async () => {
+    const cached = await getCachedPreferences();
+    applyPreferences(cached);
+
+    try {
+      const fresh = await fetchPreferences();
+      applyPreferences(fresh);
+    } catch (err) {
+      console.error('Failed to fetch fresh preferences:', err);
+    }
+  }, [applyPreferences]);
+
+  useEffect(() => {
+    if (!sessionToken) {
+      return;
+    }
+    void loadPreferences();
+  }, [sessionToken, loadPreferences]);
+
   useEffect(() => {
     if (response?.type !== 'success') {
       return;
@@ -121,6 +225,7 @@ export default function FixturesScreen() {
     setSessionTokenState(null);
     setLeagues([]);
     setWatchedIds(new Set());
+    setNotifiedIds(new Set());
     setError('Sign in to see your fixtures.');
   }, []);
 
@@ -129,11 +234,14 @@ export default function FixturesScreen() {
     if (!forceRefresh) {
       const cached = cache.get(selectedDate);
       if (cached) {
-        setLeagues(cached.leagues ?? []);
+        // Group cached leagues with favorites at top
+        const groupedLeagues = groupLeaguesWithFavorites(cached.leagues ?? [], favoriteTeams);
+        setLeagues(groupedLeagues);
         if (leagueOrder.length === 0 && cached.leagues?.length > 0) {
           setLeagueOrder(cached.leagues.map((l) => l.id));
         }
         setWatchedIds(new Set(cached.watchedIds ?? []));
+        setNotifiedIds(new Set(cached.notifiedIds ?? []));
         setError(null);
         return;
       }
@@ -142,11 +250,16 @@ export default function FixturesScreen() {
     setLoading(true);
     try {
       const data = await fetchEventsByDate(selectedDate);
-      setLeagues(data.leagues ?? []);
+
+      // Group leagues with favorites at top
+      const groupedLeagues = groupLeaguesWithFavorites(data.leagues ?? [], favoriteTeams);
+
+      setLeagues(groupedLeagues);
       if (leagueOrder.length === 0 && data.leagues?.length > 0) {
         setLeagueOrder(data.leagues.map((l) => l.id));
       }
       setWatchedIds(new Set(data.watchedIds ?? []));
+      setNotifiedIds(new Set(data.notifiedIds ?? []));
       setError(null);
       // Update cache
       setCache((prev) => new Map(prev).set(selectedDate, data));
@@ -159,7 +272,7 @@ export default function FixturesScreen() {
     } finally {
       setLoading(false);
     }
-  }, [handleAuthError, selectedDate, leagueOrder.length, cache]);
+  }, [handleAuthError, selectedDate, leagueOrder.length, favoriteTeams, cache]);
 
   useFocusEffect(
     useCallback(() => {
@@ -222,17 +335,149 @@ export default function FixturesScreen() {
     }
   }
 
+  async function toggleNotified(event: EventItem) {
+    // Check if match is too soon or past
+    const matchStatus = getMatchStatus(event.date, event.time);
+    if (matchStatus !== 'future') {
+      Alert.alert(
+        'Cannot Notify',
+        'This match is starting soon or has already started.'
+      );
+      return;
+    }
+
+    // Request permissions
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      Alert.alert(
+        'Notifications Disabled',
+        'Please enable notifications in Settings to receive match reminders.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const isNotified = notifiedIds.has(event.eventId);
+    const prevNotifiedIds = notifiedIds;
+    const nextNotifiedIds = new Set(prevNotifiedIds);
+
+    // Optimistic UI update
+    if (isNotified) {
+      nextNotifiedIds.delete(event.eventId);
+    } else {
+      nextNotifiedIds.add(event.eventId);
+    }
+    setNotifiedIds(nextNotifiedIds);
+    setPending(event.eventId, true);
+
+    try {
+      if (isNotified) {
+        // Cancel notification and remove from backend
+        const record = await getNotifiedEvent(event.eventId);
+        if (record?.notificationId) {
+          await cancelNotification(record.notificationId);
+        }
+        await removeNotifiedEvent(event.eventId);
+      } else {
+        // Schedule notification and save to backend
+        const notificationId = await scheduleMatchNotification(event);
+        await addNotifiedEvent(event, notificationId);
+      }
+
+      setError(null);
+
+      // Update cache
+      const cached = cache.get(selectedDate);
+      if (cached) {
+        const updatedCache = {
+          ...cached,
+          notifiedIds: Array.from(nextNotifiedIds),
+        };
+        setCache((prev) => new Map(prev).set(selectedDate, updatedCache));
+      }
+    } catch (err) {
+      if (err instanceof AuthError) {
+        await handleAuthError();
+        return;
+      }
+      // Rollback on error
+      setNotifiedIds(prevNotifiedIds);
+      setError(
+        err instanceof Error ? err.message : 'Failed to update notification.'
+      );
+    } finally {
+      setPending(event.eventId, false);
+    }
+  }
+
   function moveDate(delta: number) {
     const nextDate = addDays(selectedDate, delta);
     setSelectedDate(nextDate);
   }
 
-  async function signOut() {
-    await clearSessionToken();
-    setSessionTokenState(null);
-    setLeagues([]);
-    setWatchedIds(new Set());
-    setError(null);
+  async function toggleCollapsed(leagueId: string) {
+    const newCollapsed = new Set(collapsedLeagues);
+    if (newCollapsed.has(leagueId)) {
+      newCollapsed.delete(leagueId);
+    } else {
+      newCollapsed.add(leagueId);
+    }
+    setCollapsedLeagues(newCollapsed);
+
+    try {
+      await toggleLeagueCollapsed(leagueId);
+    } catch (err) {
+      console.error('Failed to toggle collapsed state:', err);
+      setCollapsedLeagues(collapsedLeagues);
+    }
+  }
+
+  async function toggleHidden(leagueId: string) {
+    const newHidden = new Set(hiddenLeagues);
+    if (newHidden.has(leagueId)) {
+      newHidden.delete(leagueId);
+    } else {
+      newHidden.add(leagueId);
+    }
+    setHiddenLeagues(newHidden);
+
+    try {
+      await toggleLeagueHidden(leagueId);
+    } catch (err) {
+      console.error('Failed to toggle hidden state:', err);
+      setHiddenLeagues(hiddenLeagues);
+    }
+  }
+
+  async function toggleFavorite(teamName: string) {
+    const newFavorites = new Set(favoriteTeams);
+    if (newFavorites.has(teamName)) {
+      newFavorites.delete(teamName);
+    } else {
+      newFavorites.add(teamName);
+    }
+
+    // Optimistic update
+    setFavoriteTeams(newFavorites);
+
+    // Re-group leagues with new favorites
+    const cached = cache.get(selectedDate);
+    if (cached) {
+      const regroupedLeagues = groupLeaguesWithFavorites(cached.leagues ?? [], newFavorites);
+      setLeagues(regroupedLeagues);
+    }
+
+    try {
+      await toggleFavoriteTeam(teamName);
+    } catch (err) {
+      console.error('Failed to toggle favorite team:', err);
+      // Rollback on error
+      setFavoriteTeams(favoriteTeams);
+      if (cached) {
+        const regroupedLeagues = groupLeaguesWithFavorites(cached.leagues ?? [], favoriteTeams);
+        setLeagues(regroupedLeagues);
+      }
+    }
   }
 
   if (checkingSession) {
@@ -304,18 +549,7 @@ export default function FixturesScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => loadEvents(true)} />}
       >
         <View style={styles.hero}>
-          <View style={styles.authRow}>
-            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
-            <Pressable
-              style={[styles.ghostButton, { borderColor: theme.border }]}
-              onPress={() => setShowSettings(true)}
-            >
-              <ThemedText style={[styles.buttonText, { color: theme.text }]}
-              >
-                Settings
-              </ThemedText>
-            </Pressable>
-          </View>
+          <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
           <ThemedText type="title" style={styles.heroTitle}>
             Your fixture diary
           </ThemedText>
@@ -335,6 +569,12 @@ export default function FixturesScreen() {
                 Top leagues + Champions League.
               </ThemedText>
             </View>
+            <Pressable
+              style={styles.settingsIconButton}
+              onPress={() => setShowSettings(true)}
+            >
+              <Ionicons name="settings-outline" size={22} color={theme.muted} />
+            </Pressable>
           </View>
 
           <View style={styles.dateRow}>
@@ -398,32 +638,53 @@ export default function FixturesScreen() {
             <View style={styles.leagueList}>
               {leagues
                 .filter((league) => league.events.length > 0)
+                .filter((league) => !hiddenLeagues.has(league.id))
                 .map((league, index, filtered) => (
                   <View
                     key={league.id}
                     style={[styles.leagueGroup, { backgroundColor: theme.surfaceAlt }]}
                   >
-                    <View style={styles.leagueHeader}>
+                    <Pressable
+                      style={styles.leagueHeader}
+                      onPress={() => toggleCollapsed(league.id)}
+                    >
                       <View style={styles.leagueTitle}>
-                        <Image
-                          source={{ uri: league.badge }}
-                          style={styles.leagueBadgeImage}
-                        />
+                        {league.id === 'favorites' ? (
+                          <View style={styles.leagueBadgeImage}>
+                            <Ionicons name="star" size={20} color={theme.muted} />
+                          </View>
+                        ) : (
+                          <Image
+                            source={{ uri: league.badge }}
+                            style={styles.leagueBadgeImage}
+                          />
+                        )}
                         <ThemedText style={styles.leagueName}>{league.name}</ThemedText>
                       </View>
-                      <ThemedText style={[styles.leagueCount, { color: theme.muted }]}>
-                        {league.events.length}
-                      </ThemedText>
-                    </View>
-                    {league.events.map((event) => {
+                      <View style={styles.leagueRight}>
+                        <ThemedText style={[styles.leagueCount, { color: theme.muted }]}>
+                          {league.events.length}
+                        </ThemedText>
+                        <Ionicons
+                          name={collapsedLeagues.has(league.id) ? 'chevron-forward' : 'chevron-down'}
+                          size={20}
+                          color={theme.muted}
+                        />
+                      </View>
+                    </Pressable>
+                    {!collapsedLeagues.has(league.id) && league.events.map((event) => {
                       const isWatched = watchedIds.has(event.eventId);
+                      const isNotified = notifiedIds.has(event.eventId);
                       const isPending = pendingIds.has(event.eventId);
                       const isLive = isMatchLive(event.date, event.time);
+                      const matchStatus = getMatchStatus(event.date, event.time);
+                      const showNotifyButton = matchStatus === 'future' && !event.time?.includes('TBD');
+
                       return (
                         <Pressable
                           key={event.eventId}
                           style={[styles.eventCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                          onPress={() => toggleWatched(event)}
+                          onPress={() => showNotifyButton ? toggleNotified(event) : toggleWatched(event)}
                           disabled={isPending}
                         >
                           <View style={styles.eventTimeCol}>
@@ -436,12 +697,47 @@ export default function FixturesScreen() {
                           </View>
 
                           <View style={styles.eventTeamsCol}>
-                            <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
-                              {event.homeTeam}
-                            </ThemedText>
-                            <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
-                              {event.awayTeam}
-                            </ThemedText>
+                            {/* Home Team Row */}
+                            <View style={styles.teamRow}>
+                              <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
+                                {event.homeTeam}
+                              </ThemedText>
+                              <Pressable
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  void toggleFavorite(event.homeTeam);
+                                }}
+                                hitSlop={8}
+                                style={styles.starButton}
+                              >
+                                <Ionicons
+                                  name={favoriteTeams.has(event.homeTeam) ? "star" : "star-outline"}
+                                  size={14}
+                                  color={favoriteTeams.has(event.homeTeam) ? "#FFC107" : theme.muted}
+                                />
+                              </Pressable>
+                            </View>
+
+                            {/* Away Team Row */}
+                            <View style={styles.teamRow}>
+                              <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
+                                {event.awayTeam}
+                              </ThemedText>
+                              <Pressable
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  void toggleFavorite(event.awayTeam);
+                                }}
+                                hitSlop={8}
+                                style={styles.starButton}
+                              >
+                                <Ionicons
+                                  name={favoriteTeams.has(event.awayTeam) ? "star" : "star-outline"}
+                                  size={14}
+                                  color={favoriteTeams.has(event.awayTeam) ? "#FFC107" : theme.muted}
+                                />
+                              </Pressable>
+                            </View>
                           </View>
 
                           <View style={styles.eventScoreCol}>
@@ -453,16 +749,29 @@ export default function FixturesScreen() {
                             </ThemedText>
                           </View>
 
-                          <View style={styles.eventWatchCol}>
-                            <Ionicons
-                              name={isWatched ? 'eye' : 'eye-outline'}
-                              size={20}
-                              color={theme.muted}
-                            />
-                            <ThemedText style={[styles.watchLabel, { color: theme.muted }]}>
-                              {isWatched ? 'Watched' : 'Watch'}
-                            </ThemedText>
-                          </View>
+                          {showNotifyButton ? (
+                            <View style={styles.eventWatchCol}>
+                              <Ionicons
+                                name={isNotified ? 'notifications' : 'notifications-outline'}
+                                size={20}
+                                color={isNotified ? theme.tint : theme.muted}
+                              />
+                              <ThemedText style={[styles.watchLabel, { color: isNotified ? theme.tint : theme.muted }]}>
+                                {isNotified ? 'Notified' : 'Notify'}
+                              </ThemedText>
+                            </View>
+                          ) : (
+                            <View style={styles.eventWatchCol}>
+                              <Ionicons
+                                name={isWatched ? 'eye' : 'eye-outline'}
+                                size={20}
+                                color={isLive && isWatched ? '#FF3B30' : theme.muted}
+                              />
+                              <ThemedText style={[styles.watchLabel, { color: isLive && isWatched ? '#FF3B30' : theme.muted }]}>
+                                {isWatched ? (isLive ? 'Watching' : 'Watched') : 'Watch'}
+                              </ThemedText>
+                            </View>
+                          )}
                         </Pressable>
                       );
                     })}
@@ -494,14 +803,11 @@ export default function FixturesScreen() {
               </Pressable>
             </View>
 
-            <ScrollView
-              style={styles.modalBody}
-              contentContainerStyle={styles.modalBodyContent}
-            >
+            <View style={styles.modalBody}>
               <View style={styles.settingsSection}>
-                <ThemedText type="subtitle">League Order</ThemedText>
+                <ThemedText type="subtitle">League Settings</ThemedText>
                 <ThemedText style={[styles.settingsDescription, { color: theme.muted }]}>
-                  Drag and drop to reorder leagues
+                  Long press to reorder, toggle to hide/show leagues
                 </ThemedText>
                 <GestureHandlerRootView style={styles.leagueOrderList}>
                   <DraggableFlatList
@@ -510,7 +816,7 @@ export default function FixturesScreen() {
                       league: leagues.find((l) => l.id === leagueId),
                     })).filter((item) => item.league !== undefined)}
                     keyExtractor={(item) => item.id}
-                    onDragEnd={({ data }) => {
+                    onDragEnd={async ({ data }) => {
                       const newOrder = data.map((item) => item.id);
                       setLeagueOrder(newOrder);
                       setLeagues((prev) =>
@@ -519,22 +825,29 @@ export default function FixturesScreen() {
                             newOrder.indexOf(a.id) - newOrder.indexOf(b.id)
                         )
                       );
+                      try {
+                        await updateLeagueOrder(newOrder);
+                      } catch (err) {
+                        console.error('Failed to persist league order:', err);
+                      }
                     }}
                     renderItem={({ item, drag, isActive }) => (
                       <ScaleDecorator>
-                        <Pressable
-                          onLongPress={drag}
-                          disabled={isActive}
+                        <View
                           style={[
                             styles.leagueOrderItem,
                             {
-                              backgroundColor: isActive ? theme.surfaceAlt : theme.surfaceAlt,
+                              backgroundColor: isActive ? theme.surface : theme.surfaceAlt,
                               borderColor: theme.border,
                               opacity: isActive ? 0.8 : 1,
                             },
                           ]}
                         >
-                          <View style={styles.leagueOrderInfo}>
+                          <Pressable
+                            onLongPress={drag}
+                            disabled={isActive}
+                            style={styles.leagueOrderInfo}
+                          >
                             <Ionicons
                               name="menu"
                               size={20}
@@ -548,29 +861,19 @@ export default function FixturesScreen() {
                             <ThemedText style={styles.leagueOrderName}>
                               {item.league!.name}
                             </ThemedText>
-                          </View>
-                        </Pressable>
+                          </Pressable>
+                          <Switch
+                            value={!hiddenLeagues.has(item.id)}
+                            onValueChange={() => toggleHidden(item.id)}
+                          />
+                        </View>
                       </ScaleDecorator>
                     )}
                   />
                 </GestureHandlerRootView>
               </View>
 
-              <View style={styles.accountSection}>
-                <ThemedText type="subtitle">Account</ThemedText>
-                <Pressable
-                  style={[styles.ghostButton, { borderColor: theme.border }]}
-                  onPress={() => {
-                    setShowSettings(false);
-                    signOut();
-                  }}
-                >
-                  <ThemedText style={[styles.buttonText, { color: theme.text }]}>
-                    Sign out
-                  </ThemedText>
-                </Pressable>
-              </View>
-            </ScrollView>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -633,6 +936,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
+  },
+  settingsIconButton: {
+    padding: 8,
   },
   panelCopy: {
     marginTop: 4,
@@ -697,6 +1003,11 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
+  leagueRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   leagueName: {
     fontSize: 15,
     fontWeight: '700',
@@ -704,12 +1015,13 @@ const styles = StyleSheet.create({
   },
   leagueCount: {
     fontSize: 12,
-    marginRight: 4,
   },
   leagueBadgeImage: {
     width: 24,
     height: 24,
     resizeMode: 'contain',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   eventCard: {
     padding: 8,
@@ -741,6 +1053,18 @@ const styles = StyleSheet.create({
   },
   eventTeam: {
     fontSize: 13,
+    flexShrink: 1,
+  },
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    minWidth: 0,
+  },
+  starButton: {
+    padding: 0,
+    paddingLeft: 2,
   },
   eventScoreCol: {
     width: 35,
@@ -835,16 +1159,10 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     flex: 1,
-  },
-  modalBodyContent: {
     padding: 20,
   },
   settingsSection: {
     marginBottom: 20,
-  },
-  accountSection: {
-    marginTop: 12,
-    gap: 16,
   },
   settingsDescription: {
     fontSize: 13,
@@ -857,6 +1175,7 @@ const styles = StyleSheet.create({
   leagueOrderItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
