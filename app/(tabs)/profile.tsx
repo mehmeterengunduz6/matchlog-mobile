@@ -29,6 +29,11 @@ import {
   removeWatchedEvent,
   type WatchedEvent,
 } from '../../lib/matchlog';
+import {
+  fetchPreferences,
+  getCachedPreferences,
+  toggleFavoriteTeam,
+} from '../../lib/preferences';
 
 // ─── Friends Mock Data ───────────────────────────────────────────────────────
 
@@ -53,7 +58,7 @@ type FriendUser = {
 
 // ─── Segment Tabs Component ──────────────────────────────────────────────────
 
-type Segment = 'watched' | 'friends';
+type Segment = 'watched' | 'favorites' | 'friends';
 
 function SegmentedControl({
   selected,
@@ -80,6 +85,22 @@ function SegmentedControl({
           ]}
         >
           Watched
+        </ThemedText>
+      </Pressable>
+      <Pressable
+        style={[
+          styles.segmentButton,
+          selected === 'favorites' && { backgroundColor: theme.surface },
+        ]}
+        onPress={() => onSelect('favorites')}
+      >
+        <ThemedText
+          style={[
+            styles.segmentText,
+            { color: selected === 'favorites' ? theme.text : theme.muted },
+          ]}
+        >
+          Favorites
         </ThemedText>
       </Pressable>
       <Pressable
@@ -125,6 +146,11 @@ export default function ProfileScreen() {
   // ─── Friends State ───────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<FriendUser[]>([...MOCK_USERS]);
+
+  // ─── Favorites State ─────────────────────────────────────────────────────────
+  const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [favoritesError, setFavoritesError] = useState<string | null>(null);
 
   // ─── Settings State ─────────────────────────────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
@@ -175,35 +201,6 @@ export default function ProfileScreen() {
     [cache]
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      setCheckingSession(true);
-      getSessionToken()
-        .then((token) => {
-          if (!active) {
-            return;
-          }
-          setSessionTokenState(token);
-          if (token) {
-            void loadEvents();
-          } else {
-            setEvents([]);
-            setLoading(false);
-            setError('Sign in to see your watched matches.');
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setCheckingSession(false);
-          }
-        });
-      return () => {
-        active = false;
-      };
-    }, [loadEvents])
-  );
-
   function setPending(eventId: string, value: boolean) {
     setPendingIds((prev) => {
       const next = new Set(prev);
@@ -247,8 +244,78 @@ export default function ProfileScreen() {
     setSessionTokenState(null);
     setEvents([]);
     setCache(null);
+    setFavoriteTeams([]);
+    setFavoritesError(null);
     setError('Signed out.');
   }
+
+  // ─── Favorites Logic ─────────────────────────────────────────────────────────
+
+  const loadFavorites = useCallback(async (forceRefresh = false) => {
+    if (!forceRefresh) {
+      const cached = await getCachedPreferences();
+      setFavoriteTeams(cached.favoriteTeams ?? []);
+    }
+
+    setFavoritesLoading(true);
+    try {
+      const preferences = await fetchPreferences();
+      setFavoriteTeams(preferences.favoriteTeams ?? []);
+      setFavoritesError(null);
+    } catch (err) {
+      setFavoritesError(err instanceof Error ? err.message : 'Failed to load favorites.');
+    } finally {
+      setFavoritesLoading(false);
+    }
+  }, []);
+
+  async function removeFavorite(teamName: string) {
+    const prevFavorites = favoriteTeams;
+    const nextFavorites = favoriteTeams.filter((name) => name !== teamName);
+    setFavoriteTeams(nextFavorites);
+
+    try {
+      await toggleFavoriteTeam(teamName);
+      setFavoritesError(null);
+    } catch (err) {
+      setFavoriteTeams(prevFavorites);
+      setFavoritesError(
+        err instanceof Error ? err.message : 'Failed to update favorites.'
+      );
+    }
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setCheckingSession(true);
+      getSessionToken()
+        .then((token) => {
+          if (!active) {
+            return;
+          }
+          setSessionTokenState(token);
+          if (token) {
+            void loadEvents();
+            void loadFavorites();
+          } else {
+            setEvents([]);
+            setFavoriteTeams([]);
+            setLoading(false);
+            setFavoritesLoading(false);
+            setError('Sign in to see your watched matches.');
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setCheckingSession(false);
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }, [loadEvents, loadFavorites])
+  );
 
   // ─── Friends Logic ───────────────────────────────────────────────────────────
 
@@ -317,6 +384,11 @@ export default function ProfileScreen() {
         refreshControl={
           segment === 'watched' ? (
             <RefreshControl refreshing={loading} onRefresh={() => loadEvents(true)} />
+          ) : segment === 'favorites' ? (
+            <RefreshControl
+              refreshing={favoritesLoading}
+              onRefresh={() => loadFavorites(true)}
+            />
           ) : undefined
         }
       >
@@ -351,6 +423,14 @@ export default function ProfileScreen() {
             error={error}
             pendingIds={pendingIds}
             unwatchEvent={unwatchEvent}
+          />
+        ) : segment === 'favorites' ? (
+          <FavoritesContent
+            theme={theme}
+            favorites={favoriteTeams}
+            loading={favoritesLoading}
+            error={favoritesError}
+            removeFavorite={removeFavorite}
           />
         ) : (
           <FriendsContent
@@ -498,6 +578,70 @@ function WatchedContent({
                   );
                 })}
               </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Favorites Content Component ─────────────────────────────────────────────
+
+function FavoritesContent({
+  theme,
+  favorites,
+  loading,
+  error,
+  removeFavorite,
+}: {
+  theme: typeof Colors.light;
+  favorites: string[];
+  loading: boolean;
+  error: string | null;
+  removeFavorite: (teamName: string) => Promise<void>;
+}) {
+  const uniqueFavorites = useMemo(
+    () => Array.from(new Set(favorites)),
+    [favorites]
+  );
+
+  return (
+    <View style={[styles.panel, { backgroundColor: theme.surface }]}>
+      <View style={styles.panelHeader}>
+        <ThemedText type="subtitle">Favorite teams</ThemedText>
+        <ThemedText style={[styles.panelMeta, { color: theme.muted }]}>
+          {uniqueFavorites.length} teams
+        </ThemedText>
+      </View>
+
+      {loading ? (
+        <ThemedText style={[styles.emptyState, { color: theme.muted }]}>
+          Loading favorites...
+        </ThemedText>
+      ) : error ? (
+        <ThemedText style={[styles.errorText, { color: theme.accent }]}>{error}</ThemedText>
+      ) : uniqueFavorites.length === 0 ? (
+        <ThemedText style={[styles.emptyState, { color: theme.muted }]}>
+          You have no favorite teams yet.
+        </ThemedText>
+      ) : (
+        <View style={styles.favoriteList}>
+          {uniqueFavorites.map((team) => (
+            <View
+              key={team}
+              style={[styles.favoriteRow, { borderColor: theme.border }]}
+            >
+              <ThemedText style={styles.favoriteName} numberOfLines={1}>
+                {team}
+              </ThemedText>
+              <Pressable
+                style={[styles.favoriteRemoveButton, { borderColor: theme.border }]}
+                onPress={() => removeFavorite(team)}
+              >
+                <Ionicons name="star" size={14} color="#FFC107" />
+                <ThemedText style={styles.favoriteRemoveText}>Remove</ThemedText>
+              </Pressable>
             </View>
           ))}
         </View>
@@ -893,6 +1037,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   friendBadgeText: {
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    fontWeight: '600',
+  },
+  // Favorites styles
+  favoriteList: {
+    marginTop: 12,
+    gap: 10,
+  },
+  favoriteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  favoriteName: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  favoriteRemoveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  favoriteRemoveText: {
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 1,
