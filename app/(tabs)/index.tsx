@@ -16,6 +16,7 @@ import { makeRedirectUri, ResponseType } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'react-native-calendars';
 import DraggableFlatList, {
   ScaleDecorator,
 } from 'react-native-draggable-flatlist';
@@ -131,6 +132,7 @@ export default function FixturesScreen() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [cache, setCache] = useState<Map<string, EventsResponse>>(new Map());
 
   const proxyRedirectUri = 'https://auth.expo.io/@mehmeterengunduz6/matchlog-app';
@@ -589,11 +591,15 @@ export default function FixturesScreen() {
               >
                 <ThemedText style={[styles.datePillIcon, { color: theme.tint }]}>◀</ThemedText>
               </Pressable>
-              <View style={styles.datePillCenter}>
+              <Pressable
+                style={styles.datePillCenter}
+                onPress={() => setShowCalendar(true)}
+                accessibilityLabel="Open calendar picker"
+              >
                 <ThemedText style={[styles.datePillLabel, { color: theme.tint }]}>
                   {selectedDate === todayValue() ? 'Today' : formatDisplayDate(selectedDate)}
                 </ThemedText>
-              </View>
+              </Pressable>
               <Pressable
                 style={styles.datePillButton}
                 onPress={() => moveDate(1)}
@@ -881,6 +887,61 @@ export default function FixturesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Calendar Picker Modal */}
+      <Modal
+        visible={showCalendar}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCalendar(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowCalendar(false)}
+        >
+          <Pressable
+            style={[styles.calendarModalContent, { backgroundColor: theme.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.modalHeader}>
+              <ThemedText type="subtitle">Select Date</ThemedText>
+              <Pressable
+                style={[styles.modalClose, { borderColor: theme.border }]}
+                onPress={() => setShowCalendar(false)}
+              >
+                <ThemedText>✕</ThemedText>
+              </Pressable>
+            </View>
+
+            <Calendar
+              current={selectedDate}
+              maxDate={todayValue()}
+              onDayPress={(day) => {
+                setSelectedDate(day.dateString);
+                setShowCalendar(false);
+              }}
+              markedDates={{
+                [selectedDate]: {
+                  selected: true,
+                  selectedColor: theme.tint,
+                },
+              }}
+              theme={{
+                backgroundColor: theme.surface,
+                calendarBackground: theme.surface,
+                textSectionTitleColor: theme.muted,
+                selectedDayBackgroundColor: theme.tint,
+                selectedDayTextColor: '#ffffff',
+                todayTextColor: theme.accent,
+                dayTextColor: theme.text,
+                textDisabledColor: theme.muted,
+                monthTextColor: theme.text,
+                arrowColor: theme.tint,
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedView>
   );
 }
@@ -1146,6 +1207,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
     height: '85%',
+  },
+  calendarModalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '70%',
   },
   modalHeader: {
     flexDirection: 'row',
