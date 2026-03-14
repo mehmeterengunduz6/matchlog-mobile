@@ -1,6 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'matchlog.sessionToken.v1';
+const USER_KEY = 'matchlog.user.v1';
+
+export type UserInfo = {
+  name: string | null;
+  email: string | null;
+  image: string | null;
+};
 const DEFAULT_DEV_BASE_URL = 'http://localhost:3000/api';
 const DEFAULT_PROD_BASE_URL = 'https://matchlog-eta.vercel.app/api';
 
@@ -24,7 +31,21 @@ export async function setSessionToken(token: string) {
 }
 
 export async function clearSessionToken() {
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+}
+
+export async function getUserInfo(): Promise<UserInfo | null> {
+  const raw = await AsyncStorage.getItem(USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as UserInfo;
+  } catch {
+    return null;
+  }
+}
+
+export async function setUserInfo(user: UserInfo) {
+  await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 async function requestJson(

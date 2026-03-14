@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -11,9 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri, ResponseType } from 'expo-auth-session';
-import * as Google from 'expo-auth-session/providers/google';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
@@ -26,13 +24,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import {
-  AuthError,
-  clearSessionToken,
-  fetchPublicJson,
-  getSessionToken,
-  setSessionToken,
-} from '../../lib/api';
+import { AuthError } from '../../lib/api';
 import {
   addDays,
   addWatchedEvent,
@@ -64,8 +56,7 @@ import {
   updateLeagueOrder,
   type UserPreferences,
 } from '../../lib/preferences';
-
-WebBrowser.maybeCompleteAuthSession();
+import { useAuth } from '@/contexts/auth-context';
 
 function groupLeaguesWithFavorites(
   leagues: LeagueGroup[],
@@ -116,7 +107,9 @@ function groupLeaguesWithFavorites(
 export default function FixturesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
+  const router = useRouter();
   const insets = useSafeAreaInsets();
+  const skipNextPress = useRef(false);
   const [selectedDate, setSelectedDate] = useState(todayValue());
   const [leagues, setLeagues] = useState<LeagueGroup[]>([]);
   const [leagueOrder, setLeagueOrder] = useState<string[]>([]);
@@ -128,40 +121,27 @@ export default function FixturesScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  const [sessionToken, setSessionTokenState] = useState<string | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
-  const [authLoading, setAuthLoading] = useState(false);
+  const { clearSession } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [cache, setCache] = useState<Map<string, EventsResponse>>(new Map());
 
-  const proxyRedirectUri = 'https://auth.expo.io/@mehmeterengunduz6/matchlog-app';
-  const returnUrl = makeRedirectUri({ path: 'oauthredirect' });
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
-    redirectUri: proxyRedirectUri,
-    responseType: ResponseType.IdToken,
-    scopes: ['profile', 'email'],
-  });
-
-  function promptWithProxy() {
-    if (!request?.url) {
+  function navigateToTeam(teamId: string | undefined, teamName: string) {
+    if (!teamId) {
+      console.warn(`Missing team ID for ${teamName}`);
       return;
     }
-    const startUrl = `${proxyRedirectUri}/start?authUrl=${encodeURIComponent(
-      request.url
-    )}&returnUrl=${encodeURIComponent(returnUrl)}`;
-    void promptAsync({ url: startUrl });
+    skipNextPress.current = true;
+    router.push(`/team/${teamId}?name=${encodeURIComponent(teamName)}`);
   }
 
-  useEffect(() => {
-    getSessionToken()
-      .then((token) => {
-        setSessionTokenState(token);
-      })
-      .finally(() => setCheckingSession(false));
-  }, []);
+  function handleEventCardPress(callback: () => void) {
+    if (skipNextPress.current) {
+      skipNextPress.current = false;
+      return;
+    }
+    callback();
+  }
 
   const applyPreferences = useCallback((prefs: UserPreferences) => {
     if (prefs.collapsedLeagues) {
@@ -191,45 +171,16 @@ export default function FixturesScreen() {
   }, [applyPreferences]);
 
   useEffect(() => {
-    if (!sessionToken) {
-      return;
-    }
     void loadPreferences();
-  }, [sessionToken, loadPreferences]);
-
-  useEffect(() => {
-    if (response?.type !== 'success') {
-      return;
-    }
-    const idToken = response.authentication?.idToken ?? response.params?.id_token;
-    if (!idToken) {
-      setError('Google sign-in failed.');
-      return;
-    }
-    setAuthLoading(true);
-    fetchPublicJson('/mobile/login', {
-      method: 'POST',
-      body: JSON.stringify({ idToken }),
-    })
-      .then(async (data: { token: string }) => {
-        await setSessionToken(data.token);
-        setSessionTokenState(data.token);
-        setError(null);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Login failed.');
-      })
-      .finally(() => setAuthLoading(false));
-  }, [response]);
+  }, [loadPreferences]);
 
   const handleAuthError = useCallback(async () => {
-    await clearSessionToken();
-    setSessionTokenState(null);
+    await clearSession();
     setLeagues([]);
     setWatchedIds(new Set());
     setNotifiedIds(new Set());
     setError('Sign in to see your fixtures.');
-  }, []);
+  }, [clearSession]);
 
   const loadEvents = useCallback(async (forceRefresh = false) => {
     // Check cache first unless force refresh
@@ -252,6 +203,17 @@ export default function FixturesScreen() {
     setLoading(true);
     try {
       const data = await fetchEventsByDate(selectedDate);
+
+      // DEBUG: Log first event to check team IDs
+      const firstEvent = data.leagues?.[0]?.events?.[0];
+      if (firstEvent) {
+        console.log('First event:', {
+          homeTeam: firstEvent.homeTeam,
+          awayTeam: firstEvent.awayTeam,
+          homeTeamId: firstEvent.homeTeamId,
+          awayTeamId: firstEvent.awayTeamId
+        });
+      }
 
       // Group leagues with favorites at top
       const groupedLeagues = groupLeaguesWithFavorites(data.leagues ?? [], favoriteTeams);
@@ -278,11 +240,8 @@ export default function FixturesScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!sessionToken) {
-        return;
-      }
       void loadEvents();
-    }, [loadEvents, sessionToken])
+    }, [loadEvents])
   );
 
   function setPending(eventId: string, value: boolean) {
@@ -486,65 +445,6 @@ export default function FixturesScreen() {
     }
   }
 
-  if (checkingSession) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.centered}>
-          <ThemedText>Checking session...</ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (!sessionToken) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + 12 },
-        ]}
-      >
-          <View style={styles.hero}>
-            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
-            <ThemedText type="title" style={styles.heroTitle}>
-              Sign in to track matches
-            </ThemedText>
-            <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
-            >
-              Use your Google account to sync watched matches with your Matchlog backend.
-            </ThemedText>
-          </View>
-          {error ? (
-            <ThemedText style={[styles.errorText, { color: theme.accent }]}>
-              {error}
-            </ThemedText>
-          ) : null}
-          <View style={styles.authActions}>
-            <Pressable
-              style={[
-                styles.primaryButton,
-                { backgroundColor: theme.accent },
-                (!request || authLoading) && styles.buttonDisabled,
-              ]}
-              onPress={promptWithProxy}
-              disabled={!request?.url || authLoading}
-            >
-              <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
-              >
-                {authLoading ? 'Signing in...' : 'Continue with Google'}
-              </ThemedText>
-            </Pressable>
-            <ThemedText style={[styles.formNote, { color: theme.muted }]}
-            >
-              Set `EXPO_PUBLIC_API_BASE_URL` if you are running the backend on a LAN address.
-            </ThemedText>
-          </View>
-        </ScrollView>
-      </ThemedView>
-    );
-  }
-
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
@@ -603,7 +503,6 @@ export default function FixturesScreen() {
               <Pressable
                 style={styles.datePillButton}
                 onPress={() => moveDate(1)}
-                disabled={selectedDate >= todayValue()}
               >
                 <ThemedText style={[styles.datePillIcon, { color: theme.tint }]}>▶</ThemedText>
               </Pressable>
@@ -694,7 +593,7 @@ export default function FixturesScreen() {
                         <Pressable
                           key={event.eventId}
                           style={[styles.eventCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                          onPress={() => showNotifyButton ? toggleNotified(event) : toggleWatched(event)}
+                          onPress={() => handleEventCardPress(() => showNotifyButton ? toggleNotified(event) : toggleWatched(event))}
                           disabled={isPending}
                         >
                           <View style={styles.eventTimeCol}>
@@ -709,12 +608,30 @@ export default function FixturesScreen() {
                           <View style={styles.eventTeamsCol}>
                             {/* Home Team Row */}
                             <View style={styles.teamRow}>
-                              <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
-                                {event.homeTeam}
-                              </ThemedText>
                               <Pressable
-                                onPress={(e) => {
-                                  e.stopPropagation();
+                                onPressIn={() => {
+                                  skipNextPress.current = true;
+                                }}
+                                onPress={() => navigateToTeam(event.homeTeamId, event.homeTeam)}
+                                style={styles.teamNameButton}
+                                disabled={!event.homeTeamId}
+                              >
+                                <ThemedText
+                                  style={[
+                                    styles.eventTeam,
+                                    event.homeTeamId && styles.clickableTeam
+                                  ]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                >
+                                  {event.homeTeam}
+                                </ThemedText>
+                              </Pressable>
+                              <Pressable
+                                onPressIn={() => {
+                                  skipNextPress.current = true;
+                                }}
+                                onPress={() => {
                                   void toggleFavorite(event.homeTeam);
                                 }}
                                 hitSlop={8}
@@ -730,12 +647,30 @@ export default function FixturesScreen() {
 
                             {/* Away Team Row */}
                             <View style={styles.teamRow}>
-                              <ThemedText style={styles.eventTeam} numberOfLines={1} ellipsizeMode="tail">
-                                {event.awayTeam}
-                              </ThemedText>
                               <Pressable
-                                onPress={(e) => {
-                                  e.stopPropagation();
+                                onPressIn={() => {
+                                  skipNextPress.current = true;
+                                }}
+                                onPress={() => navigateToTeam(event.awayTeamId, event.awayTeam)}
+                                style={styles.teamNameButton}
+                                disabled={!event.awayTeamId}
+                              >
+                                <ThemedText
+                                  style={[
+                                    styles.eventTeam,
+                                    event.awayTeamId && styles.clickableTeam
+                                  ]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
+                                >
+                                  {event.awayTeam}
+                                </ThemedText>
+                              </Pressable>
+                              <Pressable
+                                onPressIn={() => {
+                                  skipNextPress.current = true;
+                                }}
+                                onPress={() => {
                                   void toggleFavorite(event.awayTeam);
                                 }}
                                 hitSlop={8}
@@ -915,7 +850,6 @@ export default function FixturesScreen() {
 
             <Calendar
               current={selectedDate}
-              maxDate={todayValue()}
               onDayPress={(day) => {
                 setSelectedDate(day.dateString);
                 setShowCalendar(false);
@@ -954,11 +888,6 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 48,
   },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   hero: {
     paddingHorizontal: 20,
     paddingTop: 8,
@@ -977,18 +906,6 @@ const styles = StyleSheet.create({
   heroCopy: {
     fontSize: 15,
     lineHeight: 22,
-  },
-  authActions: {
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  authRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  formNote: {
-    fontSize: 12,
   },
   panel: {
     marginTop: 20,
@@ -1131,6 +1048,15 @@ const styles = StyleSheet.create({
     padding: 0,
     paddingLeft: 2,
   },
+  teamNameButton: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  clickableTeam: {
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'solid',
+  },
   eventScoreCol: {
     width: 35,
     alignItems: 'center',
@@ -1148,19 +1074,6 @@ const styles = StyleSheet.create({
   watchLabel: {
     fontSize: 10,
     fontWeight: '600',
-  },
-  primaryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
   },
   ghostButton: {
     paddingHorizontal: 14,
@@ -1183,9 +1096,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
   emptyState: {
     marginTop: 18,

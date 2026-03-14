@@ -7,7 +7,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { AuthError, clearSessionToken, getSessionToken } from '../../lib/api';
+import { AuthError } from '../../lib/api';
+import { useAuth } from '@/contexts/auth-context';
 import {
   computeInsights,
   fetchWatchedEvents,
@@ -25,8 +26,7 @@ export default function StatsScreen() {
   const [events, setEvents] = useState<WatchedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionToken, setSessionTokenState] = useState<string | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const { clearSession } = useAuth();
   const [cache, setCache] = useState<WatchedEvent[] | null>(null);
 
   const insights = useMemo(() => computeInsights(events), [events]);
@@ -85,81 +85,20 @@ export default function StatsScreen() {
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
-        await clearSessionToken();
-        setSessionTokenState(null);
-        setEvents([]);
-        setCache(null);
-        setError('Sign in to see your stats.');
+        await clearSession();
         return;
       }
       setError(err instanceof Error ? err.message : 'Failed to load stats.');
     } finally {
       setLoading(false);
     }
-  }, [cache]);
+  }, [cache, clearSession]);
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      setCheckingSession(true);
-      getSessionToken()
-        .then((token) => {
-          if (!active) {
-            return;
-          }
-          setSessionTokenState(token);
-          if (token) {
-            void loadEvents();
-          } else {
-            setEvents([]);
-            setLoading(false);
-            setError('Sign in to see your stats.');
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setCheckingSession(false);
-          }
-        });
-      return () => {
-        active = false;
-      };
+      void loadEvents();
     }, [loadEvents])
   );
-
-  if (checkingSession) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.centered}>
-          <ThemedText>Checking session...</ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (!sessionToken) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12 }]}
-        >
-          <View style={styles.hero}>
-            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
-            <ThemedText type="title" style={styles.heroTitle}>
-              Sign in to see stats
-            </ThemedText>
-            <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
-            >
-              We use your watched matches to build personal insights.
-            </ThemedText>
-          </View>
-          {error ? (
-            <ThemedText style={[styles.errorText, { color: theme.accent }]}>{error}</ThemedText>
-          ) : null}
-        </ScrollView>
-      </ThemedView>
-    );
-  }
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}
@@ -310,11 +249,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 0,
     paddingBottom: 48,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   hero: {
     paddingHorizontal: 20,

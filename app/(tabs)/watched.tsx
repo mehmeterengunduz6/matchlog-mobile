@@ -9,11 +9,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import {
-  AuthError,
-  clearSessionToken,
-  getSessionToken,
-} from '../../lib/api';
+import { AuthError } from '../../lib/api';
+import { useAuth } from '@/contexts/auth-context';
 import {
   fetchWatchedEvents,
   formatDisplayDate,
@@ -31,14 +28,12 @@ export default function WatchedScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  const [sessionToken, setSessionTokenState] = useState<string | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const { clearSession } = useAuth();
   const [cache, setCache] = useState<WatchedEvent[] | null>(null);
 
   const groupedEvents = useMemo(() => groupWatchedEvents(events), [events]);
 
   const loadEvents = useCallback(async (forceRefresh = false) => {
-    // Check cache first unless force refresh
     if (!forceRefresh && cache !== null) {
       setEvents(cache);
       setError(null);
@@ -53,45 +48,18 @@ export default function WatchedScreen() {
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
-        await clearSessionToken();
-        setSessionTokenState(null);
-        setEvents([]);
-        setCache(null);
-        setError('Sign in to see your watched matches.');
+        await clearSession();
         return;
       }
       setError(err instanceof Error ? err.message : 'Failed to load match log.');
     } finally {
       setLoading(false);
     }
-  }, [cache]);
+  }, [cache, clearSession]);
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      setCheckingSession(true);
-      getSessionToken()
-        .then((token) => {
-          if (!active) {
-            return;
-          }
-          setSessionTokenState(token);
-          if (token) {
-            void loadEvents();
-          } else {
-            setEvents([]);
-            setLoading(false);
-            setError('Sign in to see your watched matches.');
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setCheckingSession(false);
-          }
-        });
-      return () => {
-        active = false;
-      };
+      void loadEvents();
     }, [loadEvents])
   );
 
@@ -119,11 +87,7 @@ export default function WatchedScreen() {
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
-        await clearSessionToken();
-        setSessionTokenState(null);
-        setEvents([]);
-        setCache(null);
-        setError('Sign in to see your watched matches.');
+        await clearSession();
         return;
       }
       setEvents(prevEvents);
@@ -131,64 +95,6 @@ export default function WatchedScreen() {
     } finally {
       setPending(eventId, false);
     }
-  }
-
-  async function signOut() {
-    await clearSessionToken();
-    setSessionTokenState(null);
-    setEvents([]);
-    setCache(null);
-    setError('Signed out.');
-  }
-
-  if (checkingSession) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.centered}>
-          <ThemedText>Checking session...</ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (!sessionToken) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingTop: insets.top + 12 },
-          ]}
-        >
-          <View style={styles.hero}>
-            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
-            <ThemedText type="title" style={styles.heroTitle}>
-              Sign in to see your log
-            </ThemedText>
-            <ThemedText style={[styles.heroCopy, { color: theme.muted }]}
-            >
-              Head to the fixtures tab and sign in with Google to sync your watched matches.
-            </ThemedText>
-          </View>
-          {error ? (
-            <ThemedText style={[styles.errorText, { color: theme.accent }]}>
-              {error}
-            </ThemedText>
-          ) : null}
-          <View style={styles.panel}>
-            <Link href="/" asChild>
-              <Pressable style={[styles.primaryButton, { backgroundColor: theme.accent }]}
-              >
-                <ThemedText style={[styles.primaryButtonText, { color: theme.accentText }]}
-                >
-                  Go to fixtures
-                </ThemedText>
-              </Pressable>
-            </Link>
-          </View>
-        </ScrollView>
-      </ThemedView>
-    );
   }
 
   return (
@@ -201,18 +107,7 @@ export default function WatchedScreen() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => loadEvents(true)} />}
       >
         <View style={styles.hero}>
-          <View style={styles.authRow}>
-            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
-            <Pressable
-              style={[styles.ghostButton, { borderColor: theme.border }]}
-              onPress={signOut}
-            >
-              <ThemedText style={[styles.buttonText, { color: theme.text }]}
-              >
-                Sign out
-              </ThemedText>
-            </Pressable>
-          </View>
+          <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Matchlog</ThemedText>
           <ThemedText type="title" style={styles.heroTitle}>
             Your watched matches
           </ThemedText>
@@ -339,11 +234,6 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 48,
   },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   hero: {
     paddingHorizontal: 20,
     paddingTop: 28,
@@ -362,11 +252,6 @@ const styles = StyleSheet.create({
   heroCopy: {
     fontSize: 15,
     lineHeight: 22,
-  },
-  authRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   panel: {
     marginTop: 8,
@@ -446,19 +331,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
   },
-  primaryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
   ghostButton: {
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -467,25 +339,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionButton: {
-    alignSelf: 'center',
-    height: 34,
-    minWidth: 110,
-    paddingHorizontal: 14,
-    borderRadius: 17,
-  },
-  actionButtonText: {
-    fontSize: 11,
-    lineHeight: 14,
-  },
   buttonText: {
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
   emptyState: {
     marginTop: 18,

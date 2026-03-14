@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -16,11 +16,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import {
-  AuthError,
-  clearSessionToken,
-  getSessionToken,
-} from '../../lib/api';
+import { AuthError } from '../../lib/api';
+import { useAuth } from '@/contexts/auth-context';
 import {
   fetchWatchedEvents,
   formatDisplayDate,
@@ -137,8 +134,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  const [sessionToken, setSessionTokenState] = useState<string | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const { clearSession, user } = useAuth();
   const [cache, setCache] = useState<WatchedEvent[] | null>(null);
 
   const groupedEvents = useMemo(() => groupWatchedEvents(events), [events]);
@@ -154,9 +150,15 @@ export default function ProfileScreen() {
 
   // ─── Settings State ─────────────────────────────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
-  const [displayName, setDisplayName] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState(user?.name ?? '');
+  const [username, setUsername] = useState(user?.email?.split('@')[0] ?? '');
+  const [email, setEmail] = useState(user?.email ?? '');
+
+  useEffect(() => {
+    if (user?.name && !displayName) setDisplayName(user.name);
+    if (user?.email && !email) setEmail(user.email);
+    if (user?.email && !username) setUsername(user.email.split('@')[0]);
+  }, [user]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -186,11 +188,7 @@ export default function ProfileScreen() {
         setError(null);
       } catch (err) {
         if (err instanceof AuthError) {
-          await clearSessionToken();
-          setSessionTokenState(null);
-          setEvents([]);
-          setCache(null);
-          setError('Sign in to see your watched matches.');
+          await clearSession();
           return;
         }
         setError(err instanceof Error ? err.message : 'Failed to load match log.');
@@ -198,7 +196,7 @@ export default function ProfileScreen() {
         setLoading(false);
       }
     },
-    [cache]
+    [cache, clearSession]
   );
 
   function setPending(eventId: string, value: boolean) {
@@ -225,11 +223,7 @@ export default function ProfileScreen() {
       setError(null);
     } catch (err) {
       if (err instanceof AuthError) {
-        await clearSessionToken();
-        setSessionTokenState(null);
-        setEvents([]);
-        setCache(null);
-        setError('Sign in to see your watched matches.');
+        await clearSession();
         return;
       }
       setEvents(prevEvents);
@@ -240,13 +234,7 @@ export default function ProfileScreen() {
   }
 
   async function signOut() {
-    await clearSessionToken();
-    setSessionTokenState(null);
-    setEvents([]);
-    setCache(null);
-    setFavoriteTeams([]);
-    setFavoritesError(null);
-    setError('Signed out.');
+    await clearSession();
   }
 
   // ─── Favorites Logic ─────────────────────────────────────────────────────────
@@ -287,33 +275,8 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      setCheckingSession(true);
-      getSessionToken()
-        .then((token) => {
-          if (!active) {
-            return;
-          }
-          setSessionTokenState(token);
-          if (token) {
-            void loadEvents();
-            void loadFavorites();
-          } else {
-            setEvents([]);
-            setFavoriteTeams([]);
-            setLoading(false);
-            setFavoritesLoading(false);
-            setError('Sign in to see your watched matches.');
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setCheckingSession(false);
-          }
-        });
-      return () => {
-        active = false;
-      };
+      void loadEvents();
+      void loadFavorites();
     }, [loadEvents, loadFavorites])
   );
 
@@ -335,47 +298,6 @@ export default function ProfileScreen() {
       })
     );
   }
-
-  // ─── Loading State ───────────────────────────────────────────────────────────
-
-  if (checkingSession) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={styles.centered}>
-          <ThemedText>Checking session...</ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  // ─── Not Signed In ───────────────────────────────────────────────────────────
-
-  if (!sessionToken) {
-    return (
-      <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12 }]}
-        >
-          <View style={styles.hero}>
-            <ThemedText style={[styles.eyebrow, { color: theme.muted }]}>Profile</ThemedText>
-            <ThemedText type="title" style={styles.heroTitle}>
-              Sign in to continue
-            </ThemedText>
-            <ThemedText style={[styles.heroCopy, { color: theme.muted }]}>
-              Head to the fixtures tab and sign in with Google to access your profile.
-            </ThemedText>
-          </View>
-          {error ? (
-            <ThemedText style={[styles.errorText, { color: theme.accent, marginHorizontal: 20 }]}>
-              {error}
-            </ThemedText>
-          ) : null}
-        </ScrollView>
-      </ThemedView>
-    );
-  }
-
-  // ─── Signed In ───────────────────────────────────────────────────────────────
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -825,11 +747,6 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     paddingBottom: 48,
   },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   hero: {
     paddingHorizontal: 20,
     paddingTop: 28,
@@ -844,10 +761,6 @@ const styles = StyleSheet.create({
   heroTitle: {
     marginTop: 8,
     marginBottom: 6,
-  },
-  heroCopy: {
-    fontSize: 15,
-    lineHeight: 22,
   },
   headerRow: {
     flexDirection: 'row',
